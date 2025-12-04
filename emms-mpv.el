@@ -28,6 +28,10 @@
 ;; only difference is that the original "emms-player-mpv.el" file
 ;; supports only one mpv instance, while this "emms-mpv.el" file will
 ;; start a new mpv process for every new EMMS playlist you create.
+;;
+;; Also this file handles pause/unpause events i.e., when you pause mpv
+;; player itself, EMMS get a signal that the player is paused
+;; ("emms-player-mpv.el" doesn't do it).
 
 ;;; Code:
 
@@ -188,7 +192,11 @@ after stop command.
 This is a workaround for mpv-0.30+ behavior, where \"stop + loadfile\" only
 runs \"stop\".")
 
-(defvar emms-mpv-event-connect-hook nil
+(defvar emms-mpv-observed-properties '(pause)
+  "List of properties to observe.
+mpv will send \"property-change\" event for each of these properties.")
+
+(defvar emms-mpv-event-connect-hook '(emms-mpv-observe-properties)
   "Normal hook run right after establishing new JSON IPC connection to mpv.
 Runs before `emms-mpv-ipc-connect-command', if any.
 Best place to send any `observe_property', `request_log_messages',
@@ -321,11 +329,8 @@ MEDIA-ARGS are used instead of --idle, if specified."
         (emms-mpv-proc-playing nil proc)
         (interrupt-process proc)
         (when emms-mpv-proc-kill-delay
-          (run-at-time
-           emms-mpv-proc-kill-delay nil
-           (lambda (proc)
-             (delete-process proc))
-           proc))))
+          (run-at-time emms-mpv-proc-kill-delay nil
+                       #'delete-process proc))))
     (setq emms-mpv-proc nil)))
 
 
@@ -521,6 +526,11 @@ potential duplication if used for same properties from different functions."
   (when-let* ((id (emms-mpv-proc-symbol-id sym)))
     (emms-mpv-ipc-req-send `(observe_property ,id ,sym))))
 
+(defun emms-mpv-observe-properties ()
+  "Observe properties from `emms-mpv-observed-properties'."
+  (dolist (prop emms-mpv-observed-properties)
+    (emms-mpv-observe-property prop)))
+
 (defun emms-mpv-event-idle ()
   "Delayed check for switching tracks when mpv goes idle for no good reason."
   (emms-mpv-debug-msg "idle-check (stopped=%s)" emms-mpv-stopped)
@@ -541,22 +551,22 @@ Called before `emms-mpv-event-functions' and does same
 thing as these hooks."
   (pcase (alist-get 'event json-data)
     ("playback-restart"
-     ;; Separate emms-mpv-proc-playing state is used for emms started/stopped signals,
-     ;;  because start-file/end-file are also emitted after track-change and for playlists,
-     ;;  and don't correspond to actual playback state.
+     ;; Separate emms-mpv-proc-playing state is used for emms
+     ;; started/stopped signals, because start-file/end-file are also
+     ;; emitted after track-change and for playlists, and don't
+     ;; correspond to actual playback state.
      (unless (emms-mpv-proc-playing-p)
        (emms-mpv-proc-playing t)
        (emms-player-started emms-mpv))
      (emms-mpv-event-playing-time-sync))
-    ("pause"
-     (unless emms-player-paused-p
-       (setq emms-player-paused-p t)
-       (run-hooks 'emms-player-paused-hook)))
-    ("unpause"
-     (emms-mpv-event-playing-time-sync)
-     (when emms-player-paused-p
-       (setq emms-player-paused-p nil)
-       (run-hooks 'emms-player-paused-hook)))
+    ("property-change"
+     (when (string= (alist-get 'name json-data) "pause")
+       ;; json returns either `t' or `:json-false' for pause value.
+       (let ((pause (if (eq t (alist-get 'data json-data))
+                        t nil)))
+         (setq emms-player-paused-p pause)
+         (emms-mpv-event-playing-time-sync)
+         (run-hooks 'emms-player-paused-hook))))
     ("end-file"
      (when (emms-mpv-proc-playing-p)
        (emms-mpv-proc-playing nil)
@@ -566,8 +576,9 @@ thing as these hooks."
          (funcall emms-mpv-ipc-stop-command))
        (setq emms-mpv-ipc-stop-command nil)))
     ("idle"
-     ;; Can mean any kind of error before or during playback.
-     ;; Example can be access/format error, resulting in start+end without playback-restart.
+     ;; Can mean any kind of error before or during playback.  Example
+     ;; can be access/format error, resulting in start+end without
+     ;; playback-restart.
      (cancel-timer emms-mpv-idle-timer)
      (setq
       emms-mpv-idle-timer
