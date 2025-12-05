@@ -87,37 +87,6 @@ in the list."
 
 (defvar emms-mpv-ipc-proc nil) ; to avoid warnings while keeping useful defs at the top
 
-(defcustom emms-mpv-update-metadata nil
-  "Update track info (artist, album, name, etc) from mpv events, when it
-is played.
-
-This allows to dynamically update stream info from ICY tags, for
-example.  Uses `emms-mpv-event-connect-hook' and
-`emms-mpv-event-functions' hooks."
-  :type 'boolean
-  :set (lambda (sym value)
-         (set-default-toplevel-value sym value)
-         (run-at-time 0.1 nil
-                      (lambda (value)
-                        (if value
-                            (progn
-                              (add-hook
-                               'emms-mpv-event-connect-hook
-                               #'emms-mpv-info-meta-connect-func)
-                              (add-hook
-                               'emms-mpv-event-functions
-                               #'emms-mpv-info-meta-event-func)
-                              (when (process-live-p emms-mpv-ipc-proc)
-                                (emms-mpv-info-meta-connect-func)))
-                          (progn
-                            (remove-hook
-                             'emms-mpv-event-connect-hook
-                             #'emms-mpv-info-meta-connect-func)
-                            (remove-hook
-                             'emms-mpv-event-functions
-                             #'emms-mpv-info-meta-event-func))))
-                      value)))
-
 (defcustom emms-mpv-use-playlist-option nil
   "Use --playlist option and loadlist mpv command for playlist files and URLs.
 
@@ -175,7 +144,7 @@ after stop command.
 This is a workaround for mpv-0.30+ behavior, where \"stop + loadfile\" only
 runs \"stop\".")
 
-(defvar emms-mpv-observed-properties '(duration pause)
+(defvar emms-mpv-observed-properties '(duration pause metadata)
   "List of properties to observe.
 mpv will send \"property-change\" event for each of these properties.")
 
@@ -527,6 +496,9 @@ seek/restart or unpause."
    (lambda (pos err)
      (unless err (emms-playing-time-set pos)))))
 
+
+;;; Event handlers
+
 (defun emms-mpv-event-handler (json-data)
   "Handler for supported mpv events, including property changes.
 
@@ -580,25 +552,10 @@ thing as these hooks."
          (setq duration (round duration))
          (emms-track-set track 'info-playing-time duration)
          (emms-track-set track 'info-playing-time-min (/ duration 60))
-         (emms-track-set track 'info-playing-time-sec (% duration 60)))))))
-
-
-;;; Metadata update hooks
-
-(defun emms-mpv-info-meta-connect-func ()
-  "Hook function for `emms-mpv-event-connect-hook' to update
-metadata from mpv."
-  (emms-mpv-observe-property 'metadata))
-
-(defun emms-mpv-info-meta-event-func (json-data)
-  "Hook function for `emms-mpv-event-functions' to update
-metadata from mpv."
-  (when (and (string= (alist-get 'event json-data)
-                      "property-change")
-             (string= (alist-get 'name json-data)
-                      "metadata"))
-    (when-let* ((info-alist (alist-get 'data json-data)))
-      (emms-mpv-info-meta-update-track info-alist))))
+         (emms-track-set track 'info-playing-time-sec (% duration 60)))))
+    ("metadata"
+     (when-let* ((info-alist (alist-get 'data json-data)))
+      (emms-mpv-info-meta-update-track info-alist)))))
 
 (defun emms-mpv-info-meta-update-track (info-alist &optional track)
   "Update TRACK with mpv metadata from INFO-ALIST.
@@ -619,7 +576,8 @@ metadata from mpv."
                    (when value
                      (emms-track-set ,track ',(intern (format "info-%s" k))
                                      value)))))))
-    (unless track (setq track (emms-playlist-current-selected-track)))
+    (unless track
+      (setq track (emms-playlist-current-selected-track)))
     (set-track-info track
                     title (or (key title)
                               (unless (string= "" (key icy-title))
