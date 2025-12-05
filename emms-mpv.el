@@ -87,23 +87,6 @@ in the list."
 
 (defvar emms-mpv-ipc-proc nil) ; to avoid warnings while keeping useful defs at the top
 
-(defcustom emms-mpv-update-duration t
-  "Update track duration when played by mpv.
-Uses `emms-mpv-event-functions' hook."
-  :type 'boolean
-  :set (lambda (sym value)
-         (set-default-toplevel-value sym value)
-         (run-at-time 0.1 nil
-                      (lambda (value)
-                        (if value
-                            (add-hook
-                             'emms-mpv-event-functions
-                             #'emms-mpv-info-duration-event-func)
-                          (remove-hook
-                           'emms-mpv-event-functions
-                           #'emms-mpv-info-duration-event-func)))
-                      value)))
-
 (defcustom emms-mpv-update-metadata nil
   "Update track info (artist, album, name, etc) from mpv events, when it
 is played.
@@ -192,7 +175,7 @@ after stop command.
 This is a workaround for mpv-0.30+ behavior, where \"stop + loadfile\" only
 runs \"stop\".")
 
-(defvar emms-mpv-observed-properties '(pause)
+(defvar emms-mpv-observed-properties '(duration pause)
   "List of properties to observe.
 mpv will send \"property-change\" event for each of these properties.")
 
@@ -560,13 +543,7 @@ thing as these hooks."
        (emms-player-started emms-mpv))
      (emms-mpv-event-playing-time-sync))
     ("property-change"
-     (when (string= (alist-get 'name json-data) "pause")
-       ;; json returns either `t' or `:json-false' for pause value.
-       (let ((pause (if (eq t (alist-get 'data json-data))
-                        t nil)))
-         (setq emms-player-paused-p pause)
-         (emms-mpv-event-playing-time-sync)
-         (run-hooks 'emms-player-paused-hook))))
+     (emms-mpv-event-property-handler json-data))
     ("end-file"
      (when (emms-mpv-proc-playing-p)
        (emms-mpv-proc-playing nil)
@@ -586,14 +563,32 @@ thing as these hooks."
       emms-mpv-ipc-stop-command nil))
     ("start-file" (cancel-timer emms-mpv-idle-timer))))
 
+(defun emms-mpv-event-property-handler (json-data)
+  "Handler for property change mpv events."
+  (pcase (alist-get 'name json-data)
+    ("pause"
+     ;; json returns either `t' or `:json-false' for pause value.
+     (let ((pause (if (eq t (alist-get 'data json-data))
+                      t nil)))
+       (setq emms-player-paused-p pause)
+       (emms-mpv-event-playing-time-sync)
+       (run-hooks 'emms-player-paused-hook)))
+    ("duration"
+     (let ((duration (alist-get 'data json-data))
+           (track (emms-playlist-current-selected-track)))
+       (when (and track (numberp duration) (> duration 0))
+         (setq duration (round duration))
+         (emms-track-set track 'info-playing-time duration)
+         (emms-track-set track 'info-playing-time-min (/ duration 60))
+         (emms-track-set track 'info-playing-time-sec (% duration 60)))))))
+
 
 ;;; Metadata update hooks
 
 (defun emms-mpv-info-meta-connect-func ()
   "Hook function for `emms-mpv-event-connect-hook' to update
 metadata from mpv."
-  (emms-mpv-observe-property 'metadata)
-  (emms-mpv-observe-property 'duration))
+  (emms-mpv-observe-property 'metadata))
 
 (defun emms-mpv-info-meta-event-func (json-data)
   "Hook function for `emms-mpv-event-functions' to update
@@ -639,21 +634,6 @@ metadata from mpv."
                     genre (key genre)
                     note (key comment))
     (emms-track-updated track)))
-
-(defun emms-mpv-info-duration-event-func (json-data)
-  "Hook function for `emms-mpv-event-functions' to update
-track duration from mpv."
-  (when (and (string= (alist-get 'event json-data)
-                      "property-change")
-             (string= (alist-get 'name json-data)
-                      "duration"))
-    (let ((duration (alist-get 'data json-data))
-          (track (emms-playlist-current-selected-track)))
-      (when (and track (numberp duration) (> duration 0))
-        (setq duration (round duration))
-        (emms-track-set track 'info-playing-time duration)
-        (emms-track-set track 'info-playing-time-min (/ duration 60))
-        (emms-track-set track 'info-playing-time-sec (% duration 60))))))
 
 
 ;;; High-level EMMS interface
