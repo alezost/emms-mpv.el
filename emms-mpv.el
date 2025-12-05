@@ -87,14 +87,6 @@ in the list."
 
 (defvar emms-mpv-ipc-proc nil) ; to avoid warnings while keeping useful defs at the top
 
-(defcustom emms-mpv-use-playlist-option nil
-  "Use --playlist option and loadlist mpv command for playlist files and URLs.
-
-Use of this option is explicitly discouraged by mpv documentation for security
-reasons, and should be unnecessary in most common cases with modern mpv.
-Make sure to check mpv manpage for --playlist option before enabling this."
-  :type 'boolean)
-
 (defvar emms-mpv-proc nil
   "Running mpv process, controlled over --input-ipc-server unix socket.")
 
@@ -615,16 +607,12 @@ in which case common HANDLER argument is ignored."
   (setq emms-mpv-stopped nil)
   (emms-mpv-proc-playing nil)
   (let* ((track-name (emms-track-get track 'name))
-         (track-playlist-option
-          (and emms-mpv-use-playlist-option
-               (memq (emms-track-get track 'type)
-                     '(streamlist playlist))))
          (play-cmd `(batch
-                     ((,(if track-playlist-option 'loadlist 'loadfile)
-                       ,track-name replace))
+                     ((loadfile ,track-name replace))
                      ((set pause no))))
          (start-func
-          ;; Try running play-cmd and retry it on conn failure, e.g. if mpv died
+          ;; Try running play-cmd and retry it on connection failure
+          ;; e.g., if mpv died.
           (apply-partially 'emms-mpv-cmd play-cmd
                            (lambda (_mpv-data mpv-error)
                              (when (eq mpv-error 'connection-error)
