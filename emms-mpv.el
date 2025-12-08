@@ -59,7 +59,7 @@
   :type 'file)
 
 (defcustom emms-mpv-parameters
-  '("--quiet" "--really-quiet" "--no-audio-display")
+  '("--terminal=no")
   "Extra command-line arguments for started mpv process(es).
 Either a list of strings or function returning such list.
 Extra arguments --idle and --input-ipc-server are added automatically.
