@@ -90,7 +90,7 @@
   "mpv binary to use. Can be absolute path or just binary name."
   :type 'file)
 
-(defcustom emms-mpv-parameters
+(defcustom emms-mpv-arguments
   '("--terminal=no")
   "Extra command-line arguments for started mpv process(es).
 Either a list of strings or function returning such list.
@@ -281,7 +281,7 @@ MEDIA-ARGS are used instead of --idle, if specified."
     (emms-mpv-proc-stop emms-mpv-proc)
     (unless (file-directory-p (file-name-directory emms-mpv-ipc-socket))
       (make-directory (file-name-directory emms-mpv-ipc-socket)))
-    (let* ((argv emms-mpv-parameters)
+    (let* ((argv emms-mpv-arguments)
            (argv (append
                   (list emms-mpv-command-name)
                   (if (functionp argv)
