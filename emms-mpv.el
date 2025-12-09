@@ -194,13 +194,6 @@ cleared once it gets sent by `emms-mpv-ipc-sentinel'.")
 (defvar-local emms-mpv-ipc-req-table nil
   "Auto-initialized hash table of outstanding API req_ids to their handler funcs.")
 
-(defvar-local emms-mpv-ipc-stop-command nil
-  "Internal flag to track when stop command starts/finishes before next loadfile.
-Set to either nil, t or the playback start function to call on end-file event
-after stop command.
-This is a workaround for mpv-0.30+ behavior, where \"stop + loadfile\" only
-runs \"stop\".")
-
 (defvar-local emms-mpv-stopped nil
   "Non-nil if playback was stopped by call from emms.
 Similar to `emms-player-stopped-p', but set for future async events,
@@ -595,11 +588,7 @@ thing as these hooks."
           (emms-mpv-next-noerror))
          ("stop"
           (emms-mpv-update-global-state-maybe
-           emms-playlist-buffer 'stop))))
-     (when emms-mpv-ipc-stop-command
-       (unless (eq emms-mpv-ipc-stop-command t)
-         (funcall emms-mpv-ipc-stop-command))
-       (setq emms-mpv-ipc-stop-command nil)))
+           emms-playlist-buffer 'stop)))))
     ("idle"
      ;; Can mean any kind of error before or during playback.  Example
      ;; can be access/format error, resulting in start+end without
@@ -608,8 +597,7 @@ thing as these hooks."
        (cancel-timer emms-mpv-idle-timer))
      (setq
       emms-mpv-idle-timer (run-at-time emms-mpv-idle-delay
-                                       nil #'emms-mpv-event-idle)
-      emms-mpv-ipc-stop-command nil))
+                                       nil #'emms-mpv-event-idle)))
     ("start-file"
      (when emms-mpv-idle-timer
        (cancel-timer emms-mpv-idle-timer)))))
@@ -896,9 +884,7 @@ in which case common HANDLER argument is ignored."
 (defun emms-mpv-stop ()
   (with-current-emms-playlist
     (with-current-buffer emms-mpv-ipc-buffer
-      (setq
-       emms-mpv-stopped t
-       emms-mpv-ipc-stop-command t)
+      (setq emms-mpv-stopped t)
       (emms-mpv-proc-playing emms-mpv-proc nil)
       (emms-mpv-cmd `(stop)))
     (emms-mpv-stopped)))
