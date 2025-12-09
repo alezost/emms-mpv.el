@@ -214,6 +214,11 @@ to indicate that playback should stop instead of switching to next track.")
 If t, then we are somewhere between \"file-loaded\" and
 \"playback-restart\" events.")
 
+(defvar-local emms-mpv-seek-p nil
+  "State of the latest \"seek\" event.
+If t, then we are somewhere between \"seek\" and
+\"playback-restart\" events.")
+
 
 ;;; Debug messages
 
@@ -573,9 +578,13 @@ thing as these hooks."
        (setq emms-mpv-file-loaded-p nil)
        (with-current-buffer emms-playlist-buffer
          (run-hooks 'emms-mpv-file-loaded-hook)))
-     (emms-mpv-event-playing-time-sync))
+     (when emms-mpv-seek-p
+       (setq emms-mpv-seek-p nil)
+       (emms-mpv-event-playing-time-sync)))
     ("property-change"
      (emms-mpv-event-property-handler json-data))
+    ("seek"
+     (setq emms-mpv-seek-p t))
     ("file-loaded"
      (setq emms-mpv-file-loaded-p t))
     ("end-file"
