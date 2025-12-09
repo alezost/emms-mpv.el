@@ -153,6 +153,12 @@ One argument is passed to each function - JSON line,
 as sent by mpv and decoded by `json-read-from-string'.
 See also `emms-mpv-event-connect-functions'.")
 
+(defvar emms-mpv-file-loaded-hook nil
+  "Hook (list of functions) run after \"file-loaded\" event.
+Actually, this hook will be run after the following \"playback-restart\"
+event because the player is not ready for seeking or other actions right
+after \"file-loaded\" event.")
+
 (defvar emms-mpv-idle-delay 0.5
   "Delay before issuing `emms-mpv-stopped' when mpv unexpectedly goes idle.")
 
@@ -202,6 +208,11 @@ to indicate that playback should stop instead of switching to next track.")
 
 (defvar-local emms-mpv-idle-timer nil
   "Timer to delay `emms-mpv-stopped' when mpv unexpectedly goes idle.")
+
+(defvar-local emms-mpv-file-loaded-p nil
+  "State of the latest \"file-loaded\" event.
+If t, then we are somewhere between \"file-loaded\" and
+\"playback-restart\" events.")
 
 
 ;;; Debug messages
@@ -558,9 +569,15 @@ thing as these hooks."
          (emms-mpv-started emms-mpv)
          (emms-mpv-update-global-state-maybe
           emms-playlist-buffer 'start)))
+     (when emms-mpv-file-loaded-p
+       (setq emms-mpv-file-loaded-p nil)
+       (with-current-buffer emms-playlist-buffer
+         (run-hooks 'emms-mpv-file-loaded-hook)))
      (emms-mpv-event-playing-time-sync))
     ("property-change"
      (emms-mpv-event-property-handler json-data))
+    ("file-loaded"
+     (setq emms-mpv-file-loaded-p t))
     ("end-file"
      (with-current-buffer emms-playlist-buffer
        (emms-mpv-stopped)
