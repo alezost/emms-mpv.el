@@ -819,7 +819,8 @@ This is internal variable for `emms-mpv-update-current-playlist'.")
   "Return IPC buffer for the current EMMS playlist."
   (if emms-playlist-buffer-p
       emms-mpv-ipc-buffer
-    (with-current-emms-playlist emms-mpv-ipc-buffer)))
+    (with-current-buffer emms-playlist-buffer
+      emms-mpv-ipc-buffer)))
 
 
 ;;; High-level EMMS interface
