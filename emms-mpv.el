@@ -249,16 +249,6 @@ Strips whitespace from start/end of TPL-OR-MSG and strings in TPL-VALUES."
 
 ;;; mpv process
 
-(defun emms-mpv-proc-playing-p (proc)
-  "Return `mpv-playing' state for PROC."
-  (and proc
-       (process-get proc 'mpv-playing)))
-
-(defun emms-mpv-proc-playing (proc state)
-  "Set process `mpv-playing' state flag for `emms-mpv-proc-playing-p'."
-  (when proc
-    (process-put proc 'mpv-playing state)))
-
 (defun emms-mpv-proc-symbol-id (proc sym)
   "Get unique id for SYM or nil if it was already requested."
   (let ((sym-id (intern (concat "mpv-sym-" (symbol-name sym)))))
@@ -268,12 +258,10 @@ Strips whitespace from start/end of TPL-OR-MSG and strings in TPL-VALUES."
         id))))
 
 (defun emms-mpv-proc-sentinel (proc event)
-  (let ((status (process-status proc))
-        (playing (emms-mpv-proc-playing-p proc)))
+  (let ((status (process-status proc)))
     (emms-mpv-debug-msg
-     "proc[%s]: %s (status=%s, playing=%s)" proc event status playing)
-    (when (and (memq status '(exit signal))
-               playing)
+     "proc[%s]: %s (status=%s)" proc event status)
+    (when (memq status '(exit signal))
       (let* ((ipc-buf (with-current-buffer (process-buffer proc)
                         emms-mpv-ipc-buffer))
              (pl-buf (with-current-buffer ipc-buf
@@ -322,7 +310,6 @@ MEDIA-ARGS are used instead of --idle, if specified."
     (emms-mpv-debug-msg "proc[%s]: stop" proc)
     (if (not (process-live-p proc))
         (delete-process proc)
-      (emms-mpv-proc-playing proc nil)
       (interrupt-process proc)
       (when emms-mpv-proc-kill-delay
         (run-at-time emms-mpv-proc-kill-delay nil
@@ -557,13 +544,8 @@ Called before `emms-mpv-event-functions' and does same
 thing as these hooks."
   (pcase (alist-get 'event json-data)
     ("playback-restart"
-     ;; Separate emms-mpv-proc-playing state is used for emms
-     ;; started/stopped signals, because start-file/end-file are also
-     ;; emitted after track-change and for playlists, and don't
-     ;; correspond to actual playback state.
-     (unless (emms-mpv-proc-playing-p emms-mpv-proc)
-       (emms-mpv-proc-playing emms-mpv-proc t)
-       (with-current-buffer emms-playlist-buffer
+     (with-current-buffer emms-playlist-buffer
+       (unless emms-player-playing-p
          (emms-mpv-started emms-mpv)
          (emms-mpv-update-global-state-maybe
           (current-buffer) 'start)))
@@ -866,30 +848,19 @@ in which case common HANDLER argument is ignored."
         '(file url streamlist playlist)))
 
 (defun emms-mpv-start (track)
-  (with-current-emms-playlist
-    (with-current-buffer emms-mpv-ipc-buffer
-      (setq emms-mpv-stopped nil)
-      (emms-mpv-proc-playing emms-mpv-proc nil)
-      (let* ((track-name (emms-track-get track 'name))
-             (play-cmd `(batch
-                         ((loadfile ,track-name replace))
-                         ((set pause no))))
-             (start-func
-              ;; Try running play-cmd and retry it on connection failure
-              ;; e.g., if mpv died.
-              (apply-partially 'emms-mpv-cmd play-cmd
-                               (lambda (_mpv-data mpv-error)
-                                 (when (eq mpv-error 'connection-error)
-                                   (emms-mpv-cmd play-cmd))))))
-        (funcall start-func)))))
+  (let* ((track-name (emms-track-get track 'name))
+         (play-cmd `(batch
+                     ((loadfile ,track-name replace))
+                     ((set pause no)))))
+    ;; Try running play-cmd and retry it on connection failure
+    ;; e.g., if mpv died.
+    (emms-mpv-cmd play-cmd
+                  (lambda (_data error)
+                    (when (eq error 'connection-error)
+                      (emms-mpv-cmd play-cmd))))))
 
 (defun emms-mpv-stop ()
-  (with-current-emms-playlist
-    (with-current-buffer emms-mpv-ipc-buffer
-      (setq emms-mpv-stopped t)
-      (emms-mpv-proc-playing emms-mpv-proc nil)
-      (emms-mpv-cmd `(stop)))
-    (emms-mpv-stopped)))
+  (emms-mpv-cmd `(stop)))
 
 (defun emms-mpv-pause ()
   (emms-mpv-cmd `(set pause yes)))
