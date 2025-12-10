@@ -800,6 +800,10 @@ This is internal variable for `emms-mpv-update-current-playlist'.")
       (unless (eq buffer emms-mpv-playlist-buffer)
         (setq-default emms-playlist-buffer buffer)
         (emms-mpv-update-global-state 'all)
+        (when (and emms-player-playing-p
+                   (not emms-player-paused-p))
+          (with-current-buffer emms-mpv-ipc-buffer
+            (emms-mpv-event-playing-time-sync)))
         (setq emms-mpv-playlist-buffer buffer)))))
 
 (add-hook 'buffer-list-update-hook #'emms-mpv-update-current-playlist)
