@@ -566,7 +566,7 @@ thing as these hooks."
        (with-current-buffer emms-playlist-buffer
          (emms-mpv-started emms-mpv)
          (emms-mpv-update-global-state-maybe
-          emms-playlist-buffer 'start)))
+          (current-buffer) 'start)))
      (when emms-mpv-file-loaded-p
        (setq emms-mpv-file-loaded-p nil)
        (with-current-buffer emms-playlist-buffer
@@ -616,7 +616,7 @@ thing as these hooks."
        (with-current-buffer emms-playlist-buffer
          (setq emms-player-paused-p pause)
          (emms-mpv-update-global-state-maybe
-          emms-playlist-buffer 'pause))))
+          (current-buffer) 'pause))))
     ("duration"
      (with-current-buffer emms-playlist-buffer
        (let ((duration (alist-get 'data json-data))
