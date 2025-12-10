@@ -53,12 +53,12 @@
 ;;   `emms-mpv-playlist-new-current' function.
 ;;
 ;; - Each EMMS playlist has the following buffer-local variables:
-;;   `emms-player-playing-p', `emms-player-stopped-p',
-;;   `emms-player-paused-p', and `emms-playing-time'.  This allows EMMS
-;;   playlists to keep track only of the linked mpv process state.  Global
-;;   values of these variables are updated every time an EMMS buffer is
-;;   selected.  This is done by `emms-mpv-update-current-playlist'
-;;   function added to `buffer-list-update-hook'.
+;;   `emms-player-playing-p', `emms-player-stopped-p', and
+;;   `emms-player-paused-p'.  This allows EMMS playlists to keep track
+;;   only of the linked mpv process state.  Global values of these
+;;   variables are updated every time an EMMS buffer is selected.  This
+;;   is done by `emms-mpv-update-current-playlist' function added to
+;;   `buffer-list-update-hook'.
 ;;
 ;; - Each IPC buffer has some internal buffer-local variables to control
 ;;   mpv process using JSON IPC protocol (see mpv manual), mainly:
@@ -68,7 +68,6 @@
 
 (require 'emms)
 (require 'emms-player-simple)
-(require 'emms-playing-time)
 (require 'json)
 (require 'seq)
 (require 'cl-lib)
@@ -521,18 +520,18 @@ potential duplication if used for same properties from different functions."
     (with-current-buffer emms-playlist-buffer
       (emms-mpv-stopped))))
 
-(defun emms-mpv-event-playing-time-sync ()
-  "Request and update `emms-playing-time'."
-  (emms-mpv-ipc-req-send
-   emms-mpv-ipc-proc
-   '(get_property time-pos)
-   (let ((pl-buf emms-playlist-buffer))
+(defun emms-mpv-sync-playing-time-maybe ()
+  "Request playng time and call `emms-player-time-set-functions' if needed.
+It is needed only when `emms-playlist-buffer' for the current mpv
+instance is the global playlist."
+  (when (eq emms-playlist-buffer
+            (default-value 'emms-playlist-buffer))
+    (emms-mpv-cmd
+     '(get_property time-pos)
      (lambda (sec err)
        (unless err
-         (with-current-buffer pl-buf
-           (setq emms-playing-time sec)
-           (emms-mpv-update-global-state-maybe
-            pl-buf 'playing-time)))))))
+         (run-hook-with-args 'emms-player-time-set-functions
+                             sec))))))
 
 
 ;;; Event handlers
@@ -555,7 +554,7 @@ thing as these hooks."
          (run-hooks 'emms-mpv-file-loaded-hook)))
      (when emms-mpv-seek-p
        (setq emms-mpv-seek-p nil)
-       (emms-mpv-event-playing-time-sync)))
+       (emms-mpv-sync-playing-time-maybe)))
     ("property-change"
      (emms-mpv-event-property-handler json-data))
     ("seek"
@@ -594,7 +593,7 @@ thing as these hooks."
      (let ((pause (if (eq t (alist-get 'data json-data))
                       t nil)))
        (when pause
-         (emms-mpv-event-playing-time-sync))
+         (emms-mpv-sync-playing-time-maybe))
        (with-current-buffer emms-playlist-buffer
          (setq emms-player-paused-p pause)
          (emms-mpv-update-global-state-maybe
@@ -696,9 +695,6 @@ Supported KEYWORDS:
   - `pause': update `emms-player-paused-p' and run
     `emms-player-paused-hook';
 
-  - `playing-time': update `emms-playing-time' and run
-    `emms-player-time-set-functions';
-
   - `track': run `emms-track-updated-functions';
 
   - `vars': update all the above variables but do not run hooks;
@@ -708,7 +704,7 @@ Supported KEYWORDS:
   (let ((keywords (cond ((memq 'vars keywords)
                          '(vars))
                         ((memq 'all keywords)
-                         '(all pause playing-time track))
+                         '(all pause track))
                         (t keywords))))
     (with-current-buffer (default-value 'emms-playlist-buffer)
       (dolist (keyword keywords)
@@ -717,8 +713,7 @@ Supported KEYWORDS:
            (setq-default
             emms-player-playing-p emms-player-playing-p
             emms-player-stopped-p emms-player-stopped-p
-            emms-player-paused-p  emms-player-paused-p
-            emms-playing-time     emms-playing-time))
+            emms-player-paused-p  emms-player-paused-p))
           ((all start stop)
            (setq-default
             emms-player-playing-p emms-player-playing-p
@@ -732,10 +727,6 @@ Supported KEYWORDS:
           (pause
            (setq-default emms-player-paused-p emms-player-paused-p)
            (run-hooks 'emms-player-paused-hook))
-          (playing-time
-           (setq-default emms-playing-time emms-playing-time)
-           (run-hook-with-args 'emms-player-time-set-functions
-                               emms-playing-time))
           (track
            (run-hook-with-args 'emms-track-updated-functions
                                (emms-playlist-selected-track))))))))
@@ -768,8 +759,7 @@ with it."
       (setq-local emms-mpv-ipc-buffer   ipc-buf
                   emms-player-playing-p nil
                   emms-player-paused-p  nil
-                  emms-player-stopped-p t
-                  emms-playing-time     0))
+                  emms-player-stopped-p t))
     (with-current-buffer ipc-buf
       (setq-local emms-playlist-buffer buffer
                   emms-mpv-ipc-socket
@@ -804,10 +794,8 @@ This is internal variable for `emms-mpv-update-current-playlist'.")
         (unless (eq buffer emms-mpv-playlist-buffer)
           (setq-default emms-playlist-buffer buffer)
           (emms-mpv-update-global-state 'all)
-          (when (and emms-player-playing-p
-                     (not emms-player-paused-p))
-            (with-current-buffer emms-mpv-ipc-buffer
-              (emms-mpv-event-playing-time-sync)))
+          (when emms-player-playing-p
+            (emms-mpv-sync-playing-time-maybe))
           (setq emms-mpv-playlist-buffer buffer))))))
 
 (add-hook 'buffer-list-update-hook #'emms-mpv-update-current-playlist)
