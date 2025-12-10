@@ -581,6 +581,8 @@ thing as these hooks."
     ("file-loaded"
      (setq emms-mpv-file-loaded-p t))
     ("end-file"
+     (setq emms-mpv-seek-p nil
+           emms-mpv-file-loaded-p nil)
      (with-current-buffer emms-playlist-buffer
        (emms-mpv-stopped)
        (pcase (alist-get 'reason json-data)
