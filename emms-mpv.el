@@ -796,15 +796,19 @@ This is internal variable for `emms-mpv-update-current-playlist'.")
 (defun emms-mpv-update-current-playlist ()
   "If current buffer is an EMMS playlist, make it the current playlist."
   (when emms-playlist-buffer-p
-    (let ((buffer (current-buffer)))
-      (unless (eq buffer emms-mpv-playlist-buffer)
-        (setq-default emms-playlist-buffer buffer)
-        (emms-mpv-update-global-state 'all)
-        (when (and emms-player-playing-p
-                   (not emms-player-paused-p))
-          (with-current-buffer emms-mpv-ipc-buffer
-            (emms-mpv-event-playing-time-sync)))
-        (setq emms-mpv-playlist-buffer buffer)))))
+    ;; Demote errors just in case since error in
+    ;; `buffer-list-update-hook' could lead to a situation when a user
+    ;; can't switch buffers.
+    (with-demoted-errors "ERROR during updating EMMS playlist: %S"
+      (let ((buffer (current-buffer)))
+        (unless (eq buffer emms-mpv-playlist-buffer)
+          (setq-default emms-playlist-buffer buffer)
+          (emms-mpv-update-global-state 'all)
+          (when (and emms-player-playing-p
+                     (not emms-player-paused-p))
+            (with-current-buffer emms-mpv-ipc-buffer
+              (emms-mpv-event-playing-time-sync)))
+          (setq emms-mpv-playlist-buffer buffer))))))
 
 (add-hook 'buffer-list-update-hook #'emms-mpv-update-current-playlist)
 
