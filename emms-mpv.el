@@ -578,7 +578,16 @@ thing as these hooks."
           (emms-mpv-next-noerror))
          ("stop"
           (emms-mpv-update-global-state-maybe
-           emms-playlist-buffer 'stop)))))
+           emms-playlist-buffer 'stop))
+         ("error"
+          (let* ((track (emms-playlist-selected-track))
+                 (info (alist-get 'file_error json-data))
+                 (err-msg (concat "ERROR during playing \""
+                                  (emms-track-get track 'name)
+                                  "\""
+                                  (and info (concat ": " info)))))
+            (message err-msg)
+            (emms-mpv-next-noerror))))))
     ("idle"
      ;; Can mean any kind of error before or during playback.  Example
      ;; can be access/format error, resulting in start+end without
