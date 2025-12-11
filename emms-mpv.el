@@ -40,6 +40,9 @@
 ;; ("emms-player-mpv.el" doesn't do it).  So your mode line will be
 ;; updated correctly for (un)pausing (if you use `emms-state-mode' or
 ;; `emms-playing-time-mode'+`emms-mode-line-mode' or something similar).
+;;
+;; Another difference from `emms-player-mpv' is that `emms-mpv' switches
+;; between video tracks fast and smoothly, without recreating video frame.
 
 ;; Technical details:
 ;;
@@ -90,7 +93,11 @@
   :type 'file)
 
 (defcustom emms-mpv-arguments
-  '("--terminal=no")
+  ;; Using "--keep-open" argument and "eof-reached" event allows us to
+  ;; switch between video files smoothly, without flickering, which
+  ;; happens because mpv kills video frame when the previous file stops
+  ;; and recreates it when a new file starts.
+  '("--terminal=no" "--keep-open=always")
   "Extra command-line arguments for started mpv process(es).
 Either a list of strings or function returning such list.
 Extra arguments --idle and --input-ipc-server are added automatically.
@@ -140,7 +147,8 @@ Wraps-around upon reaching `emms-mpv-ipc-id-max'
   "Max value for `emms-mpv-ipc-id' to wrap around after.
 Should be fine with both mpv and Emacs, and probably never reached anyway.")
 
-(defvar emms-mpv-observed-properties '(duration pause metadata)
+(defvar emms-mpv-observed-properties
+  '(duration pause metadata eof-reached)
   "List of properties to observe.
 mpv will send \"property-change\" event for each of these properties.")
 
@@ -606,14 +614,19 @@ thing as these hooks."
   (pcase (alist-get 'name json-data)
     ("pause"
      ;; json returns either `t' or `:json-false' for pause value.
-     (let ((pause (if (eq t (alist-get 'data json-data))
-                      t nil)))
-       (when pause
-         (emms-mpv-sync-playing-time-maybe))
+     (when-let* ((pause (eq t (alist-get 'data json-data))))
+       (emms-mpv-sync-playing-time-maybe)
        (with-current-buffer emms-playlist-buffer
          (setq emms-player-paused-p pause)
          (emms-mpv-update-global-state-maybe
           (current-buffer) 'pause))))
+    ("eof-reached"
+     ;; XXX For some reason, eof is not always reached during
+     ;; over-seeking, `playback-abort' also doesn't help.
+     (when-let* ((eof (eq t (alist-get 'data json-data))))
+       (with-current-buffer emms-playlist-buffer
+         (emms-mpv-stopped)
+         (emms-mpv-next-noerror))))
     ("duration"
      (with-current-buffer emms-playlist-buffer
        (let ((duration (alist-get 'data json-data))
