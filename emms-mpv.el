@@ -744,9 +744,10 @@ Delete linked mpv and mpv ipc processes and make another EMMS playlist
 the current one."
   (when emms-playlist-buffer-p
     (when-let* ((ipc-buf (emms-mpv-current-ipc-buffer)))
-      (with-current-buffer ipc-buf
-        (emms-mpv-proc-stop emms-mpv-proc)
-        (emms-mpv-ipc-stop emms-mpv-ipc-proc)))
+      (when (buffer-live-p ipc-buf)
+        (with-current-buffer ipc-buf
+          (emms-mpv-proc-stop emms-mpv-proc)
+          (emms-mpv-ipc-stop emms-mpv-ipc-proc))))
     (let ((buffer (current-buffer)))
       (when (eq (default-value 'emms-playlist-buffer)
                 buffer)
