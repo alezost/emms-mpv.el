@@ -111,6 +111,13 @@ in the list."
   :type '(repeat (choice string
                          (const :tag "Start from blank environment" nil))))
 
+(defvar emms-mpv-stop-commands '(emms-stop)
+  "List of interactive commands that should really stop mpv.
+By default, EMMS stops+starts the player every time when a new track is
+started.  This is a long and unnecessary process (at least, for mpv).
+That's why `emms-mpv' ignores all stops except the ones that came
+directly from these commands called by user.")
+
 (defvar emms-mpv-proc-kill-delay 5
   "Delay until SIGKILL gets sent to `emms-mpv-proc',
 if it refuses to exit cleanly on `emms-mpv-proc-stop'.")
@@ -857,7 +864,8 @@ in which case common HANDLER argument is ignored."
                       (emms-mpv-cmd play-cmd))))))
 
 (defun emms-mpv-stop ()
-  (emms-mpv-cmd `(stop)))
+  (when (memq this-command emms-mpv-stop-commands)
+    (emms-mpv-cmd `(stop))))
 
 (defun emms-mpv-pause ()
   (emms-mpv-cmd `(set pause yes)))
