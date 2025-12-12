@@ -292,36 +292,34 @@ Strips whitespace from start/end of TPL-OR-MSG and strings in TPL-VALUES."
           (emms-mpv-update-global-state-maybe
            pl-buf 'stop))))))
 
-(defun emms-mpv-proc-init (ipc-buf &rest media-args)
-  "initialize new mpv process as `emms-mpv-proc'.
-MEDIA-ARGS are used instead of --idle, if specified."
+(defun emms-mpv-proc-init (ipc-buf)
+  "Initialize new mpv process.
+IPC-BUF is the buffer where `emms-mpv-proc' will be set to the started process."
   (with-current-buffer ipc-buf
     (emms-mpv-proc-stop emms-mpv-proc)
     (unless (file-directory-p (file-name-directory emms-mpv-ipc-socket))
       (make-directory (file-name-directory emms-mpv-ipc-socket)))
-    (let* ((argv emms-mpv-arguments)
-           (argv (append
+    (let* ((args (append
                   (list emms-mpv-command-name)
-                  (if (functionp argv)
-                      (funcall argv)
-                    argv)
-                  (list (format "--input-ipc-server=%s" emms-mpv-ipc-socket))
-                  (or media-args '("--idle"))))
-           (env emms-mpv-environment)
-           (process-environment (append
-                                 (unless (seq-some #'not env)
-                                   process-environment)
-                                 (seq-filter #'identity env)))
+                  (if (functionp emms-mpv-arguments)
+                      (funcall emms-mpv-arguments)
+                    emms-mpv-arguments)
+                  (list (format "--input-ipc-server=%s" emms-mpv-ipc-socket)
+                        "--idle")))
+           (process-environment (if (memq nil emms-mpv-environment)
+                                    (delq nil emms-mpv-environment)
+                                  (append emms-mpv-environment
+                                          process-environment)))
            (buffer (generate-new-buffer " *emms-mpv*")))
       (setq emms-mpv-proc
             (make-process :name "emms-mpv"
                           :buffer buffer
-                          :command argv
+                          :command args
                           :noquery t
                           :sentinel #'emms-mpv-proc-sentinel))
       (with-current-buffer buffer
         (setq emms-mpv-ipc-buffer ipc-buf))
-      (emms-mpv-debug-msg "proc[%s]: start %s" emms-mpv-proc argv))))
+      (emms-mpv-debug-msg "proc[%s]: start %s" emms-mpv-proc args))))
 
 (defun emms-mpv-proc-stop (proc)
   "Stop running PROC instance via SIGINT.
