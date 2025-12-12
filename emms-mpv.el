@@ -72,7 +72,6 @@
 (require 'emms)
 (require 'emms-player-simple)
 (require 'json)
-(require 'seq)
 (require 'cl-lib)
 
 (defgroup emms-mpv nil
@@ -227,35 +226,28 @@ If t, then we are somewhere between \"seek\" and
 ;;; Debug messages
 
 (defvar emms-mpv-debug nil
-  "Enable to print sent/received JSON lines and process
-start/stop events to *Messages* buffer using `emms-mpv-debug-msg'.")
+  "If non-nil, print debug messages to *Messages* buffer.")
 
-(defvar emms-mpv-debug-ts-offset nil
-  "Timestamp offset for `emms-mpv-debug-msg'.
-Set on first use, with intent to both shorten and obfuscate time in logs.")
+(defvar emms-mpv-start-time nil
+  "Starting time for `emms-mpv-debug-msg'.
+Set on first use, with intent to shorten timestamps in debug messages.")
 
-(defun emms-mpv-debug-trim (s)
-  (if (stringp s)
-      (replace-regexp-in-string "\\(^[ \t\n\r]+\\|[ \t\n\r]+$\\)" "" s t t)
-    s))
-
-(defun emms-mpv-debug-msg (tpl-or-msg &rest tpl-values)
+(defun emms-mpv-debug-msg (format-string &rest args)
   "Print debug message to *Messages* if `emms-mpv-debug' is non-nil.
-Message is only formatted if TPL-VALUES is non-empty.
-Strips whitespace from start/end of TPL-OR-MSG and strings in TPL-VALUES."
+See `message' for the meaning of FORMAT-STRING and ARGS."
   (when emms-mpv-debug
-    (setq
-     tpl-or-msg (emms-mpv-debug-trim tpl-or-msg)
-     tpl-values (seq-map #'emms-mpv-debug-trim tpl-values))
-    (unless tpl-values
-      (setq tpl-or-msg (replace-regexp-in-string "%" "%%" tpl-or-msg t t)))
-    (let ((ts (float-time)))
-      (unless emms-mpv-debug-ts-offset
-        (setq emms-mpv-debug-ts-offset ts))
+    (let ((time (float-time))
+          (args (mapcar (lambda (arg)
+                          (if (stringp arg)
+                              (string-trim arg)
+                            arg))
+                        args)))
+      (unless emms-mpv-start-time
+        (setq emms-mpv-start-time time))
       (apply #'message
-             (concat "emms-mpv %.1f " tpl-or-msg)
-             (- ts emms-mpv-debug-ts-offset)
-             tpl-values))))
+             (concat "emms-mpv [%.1f] " format-string)
+             (- time emms-mpv-start-time)
+             args))))
 
 
 ;;; mpv process
@@ -455,10 +447,10 @@ ignored."
       (cl-destructuring-bind (cmd . handler)
           cmd-and-handler
         (let* ((req-id (emms-mpv-ipc-id-get))
-              (handler (or handler #'emms-mpv-ipc-req-error-printer))
-              (json (concat (json-encode (list :command cmd
-                                               :request_id req-id))
-                            "\n")))
+               (handler (or handler #'emms-mpv-ipc-req-error-printer))
+               (json (concat (json-encode (list :command cmd
+                                                :request_id req-id))
+                             "\n")))
           (emms-mpv-debug-msg "json >> %s" json)
           (condition-case _err
               ;; On any disconnect, assume that mpv process is to blame
