@@ -86,11 +86,13 @@
    #'emms-mpv-stop
    #'emms-mpv-playable-p)
   "Parameters for mpv player."
-  :type '(cons symbol alist))
+  :type '(cons symbol alist)
+  :group 'emms-mpv)
 
 (defcustom emms-mpv-command-name "mpv"
   "mpv binary to use. Can be absolute path or just binary name."
-  :type 'file)
+  :type 'file
+  :group 'emms-mpv)
 
 (defcustom emms-mpv-arguments
   ;; Using "--keep-open" argument and "eof-reached" event allows us to
@@ -105,7 +107,8 @@ Note that unless --no-config option is specified here,
 mpv will also use options from its configuration files.
 For mpv binary path, see `emms-mpv-command-name'."
   :type '(choice (repeat :tag "List of mpv arguments" string)
-                 function))
+                 function)
+  :group 'emms-mpv)
 
 (defcustom emms-mpv-environment nil
   "List of extra environment variables (\"VAR=value\" strings) to pass on to
@@ -116,14 +119,17 @@ Adding nil as an element to this list will discard emacs
 `process-environment' and only pass variables that are specified
 in the list."
   :type '(repeat (choice string
-                         (const :tag "Start from blank environment" nil))))
+                         (const :tag "Start from blank environment" nil)))
+  :group 'emms-mpv)
 
-(defvar emms-mpv-stop-commands '(emms-stop)
+(defcustom emms-mpv-stop-commands '(emms-stop)
   "List of interactive commands that should really stop mpv.
-By default, EMMS stops+starts the player every time when a new track is
-started.  This is a long and unnecessary process (at least, for mpv).
+By default, EMMS stops+starts the player every time when you start a new
+track.  This is a long and unnecessary process (at least, for mpv).
 That's why `emms-mpv' ignores all stops except the ones that came
-directly from these commands called by user.")
+directly from these commands called by user."
+  :type '(repeat function)
+  :group 'emms-mpv)
 
 (defvar emms-mpv-proc-kill-delay 5
   "Delay until SIGKILL gets sent to `emms-mpv-proc',
