@@ -147,26 +147,6 @@ Wraps-around upon reaching `emms-mpv-ipc-id-max'
   "Max value for `emms-mpv-ipc-id' to wrap around after.
 Should be fine with both mpv and Emacs, and probably never reached anyway.")
 
-(defvar emms-mpv-observed-properties
-  '(duration pause metadata eof-reached)
-  "List of properties to observe.
-mpv will send \"property-change\" event for each of these properties.")
-
-(defvar emms-mpv-event-connect-functions '(emms-mpv-observe-properties)
-  "List of functions to call after establishing JSON IPC connection to mpv.
-One argument is passed to each function - IPC process.
-Runs before `emms-mpv-ipc-connect-command', if any.
-Best place to send any `observe_property', `request_log_messages',
-`enable_event' commands.
-Use `emms-mpv-ipc-id-get' to get unique id values for these.
-See also `emms-mpv-event-functions'.")
-
-(defvar emms-mpv-event-functions nil
-  "List of functions to call for each event emitted from JSON IPC.
-One argument is passed to each function - JSON line,
-as sent by mpv and decoded by `json-read-from-string'.
-See also `emms-mpv-event-connect-functions'.")
-
 (defvar emms-mpv-file-loaded-hook nil
   "Hook (list of functions) run after \"file-loaded\" event.
 Actually, this hook will be run after the following \"playback-restart\"
@@ -175,6 +155,27 @@ after \"file-loaded\" event.")
 
 (defvar emms-mpv-idle-delay 0.5
   "Delay before issuing `emms-mpv-stopped' when mpv unexpectedly goes idle.")
+
+(defvar emms-mpv-event-handlers
+  '(("playback-restart" . emms-mpv-handle-event-playback-restart)
+    ("property-change"  . emms-mpv-handle-event-property-change)
+    ("seek"             . emms-mpv-handle-event-seek)
+    ("file-loaded"      . emms-mpv-handle-event-file-loaded)
+    ("start-file"       . emms-mpv-handle-event-start-file)
+    ("end-file"         . emms-mpv-handle-event-end-file)
+    ("idle"             . emms-mpv-handle-event-idle))
+  "Alist of mpv events and their handlers.
+Each handler is a function of one argument, mpv JSON data for this
+event.  Handlers are called with `emms-mpv-ipc-buffer' as the current
+buffer so all variables for the current mpv process are available.")
+
+(defvar emms-mpv-property-handlers
+  '(("pause"            . emms-mpv-handle-property-pause)
+    ("eof-reached"      . emms-mpv-handle-property-eof-reached)
+    ("duration"         . emms-mpv-handle-property-duration)
+    ("metadata"         . emms-mpv-handle-property-metadata))
+  "Alist of mpv properties and their handlers.
+See `emms-mpv-handle-event-handlers' for details.")
 
 
 ;;; Buffer-local variables
@@ -263,9 +264,9 @@ Strips whitespace from start/end of TPL-OR-MSG and strings in TPL-VALUES."
 
 ;;; mpv process
 
-(defun emms-mpv-proc-symbol-id (proc sym)
-  "Get unique id for SYM or nil if it was already requested."
-  (let ((sym-id (intern (concat "mpv-sym-" (symbol-name sym)))))
+(defun emms-mpv-proc-property-id (proc prop)
+  "Get unique id for PROP or nil if it was already requested."
+  (let ((sym-id (intern (concat "mpv-sym-" prop))))
     (unless (process-get proc sym-id)
       (let ((id (emms-mpv-ipc-id-get)))
         (process-put proc sym-id id)
@@ -337,7 +338,9 @@ MEDIA-ARGS are used instead of --idle, if specified."
   (when (memq (process-status proc)
               '(open run))
     (with-current-buffer (process-buffer proc)
-      (run-hook-with-args 'emms-mpv-event-connect-functions proc)
+      (mapc (lambda (assoc)
+              (emms-mpv-observe-property proc (car assoc)))
+            emms-mpv-property-handlers)
       (when emms-mpv-ipc-connect-command
         (let ((cmd emms-mpv-ipc-connect-command))
           (setq emms-mpv-ipc-connect-command nil)
@@ -511,22 +514,17 @@ errors, if any."
         (emms-mpv-ipc-req-resolve req-id
                                   (alist-get 'data json-data)
                                   (alist-get 'error json-data)))
-      (when-let* ((event (alist-get 'event json-data)))
-        ;; mpv event
-        (emms-mpv-event-handler json-data)
-        (run-hook-with-args 'emms-mpv-event-functions json-data)))))
+      (when-let* ((event   (alist-get 'event json-data))
+                  (handler (alist-get event emms-mpv-event-handlers
+                                      nil nil #'string=)))
+        (funcall handler json-data)))))
 
-(defun emms-mpv-observe-property (proc sym)
-  "Send mpv observe_property command for property identified by SYM.
+(defun emms-mpv-observe-property (proc prop)
+  "Send mpv observe_property command for property PROP.
 Only sends command once per process, removing any
 potential duplication if used for same properties from different functions."
-  (when-let* ((id (emms-mpv-proc-symbol-id proc sym)))
-    (emms-mpv-ipc-req-send proc `(observe_property ,id ,sym))))
-
-(defun emms-mpv-observe-properties (proc)
-  "Observe properties from `emms-mpv-observed-properties'."
-  (dolist (prop emms-mpv-observed-properties)
-    (emms-mpv-observe-property proc prop)))
+  (when-let* ((id (emms-mpv-proc-property-id proc prop)))
+    (emms-mpv-ipc-req-send proc (list 'observe_property id prop))))
 
 (defun emms-mpv-event-idle ()
   "Delayed check for switching tracks when mpv goes idle for no good reason."
@@ -551,96 +549,113 @@ instance is the global playlist."
 
 ;;; Event handlers
 
-(defun emms-mpv-event-handler (json-data)
-  "Handler for supported mpv events, including property changes.
+(defun emms-mpv-handle-event-playback-restart (_json-data)
+  "Handler for \"playback-restart\" event."
+  (with-current-buffer emms-playlist-buffer
+    (unless emms-player-playing-p
+      (emms-mpv-started emms-mpv)
+      (emms-mpv-update-global-state-maybe
+       (current-buffer) 'start)))
+  (when emms-mpv-file-loaded-p
+    (setq emms-mpv-file-loaded-p nil)
+    (with-current-buffer emms-playlist-buffer
+      (run-hooks 'emms-mpv-file-loaded-hook)))
+  (when emms-mpv-seek-p
+    (setq emms-mpv-seek-p nil)
+    (emms-mpv-sync-playing-time-maybe)))
 
-Called before `emms-mpv-event-functions' and does same
-thing as these hooks."
-  (pcase (alist-get 'event json-data)
-    ("playback-restart"
-     (with-current-buffer emms-playlist-buffer
-       (unless emms-player-playing-p
-         (emms-mpv-started emms-mpv)
-         (emms-mpv-update-global-state-maybe
-          (current-buffer) 'start)))
-     (when emms-mpv-file-loaded-p
-       (setq emms-mpv-file-loaded-p nil)
-       (with-current-buffer emms-playlist-buffer
-         (run-hooks 'emms-mpv-file-loaded-hook)))
-     (when emms-mpv-seek-p
-       (setq emms-mpv-seek-p nil)
-       (emms-mpv-sync-playing-time-maybe)))
-    ("property-change"
-     (emms-mpv-event-property-handler json-data))
-    ("seek"
-     (setq emms-mpv-seek-p t))
-    ("file-loaded"
-     (setq emms-mpv-file-loaded-p t))
-    ("end-file"
-     (setq emms-mpv-seek-p nil
-           emms-mpv-file-loaded-p nil)
-     (with-current-buffer emms-playlist-buffer
-       (emms-mpv-stopped)
-       (pcase (alist-get 'reason json-data)
-         ("eof"
-          (emms-mpv-next-noerror))
-         ("stop"
-          (emms-mpv-update-global-state-maybe
-           emms-playlist-buffer 'stop))
-         ("error"
-          (let* ((track (emms-playlist-selected-track))
-                 (info (alist-get 'file_error json-data))
-                 (err-msg (concat "ERROR during playing \""
-                                  (emms-track-get track 'name)
-                                  "\""
-                                  (and info (concat ": " info)))))
-            (message err-msg)
-            (emms-mpv-next-noerror))))))
-    ("idle"
-     ;; Can mean any kind of error before or during playback.  Example
-     ;; can be access/format error, resulting in start+end without
-     ;; playback-restart.
-     (when emms-mpv-idle-timer
-       (cancel-timer emms-mpv-idle-timer))
-     (setq
-      emms-mpv-idle-timer (run-at-time emms-mpv-idle-delay
-                                       nil #'emms-mpv-event-idle)))
-    ("start-file"
-     (when emms-mpv-idle-timer
-       (cancel-timer emms-mpv-idle-timer)))))
+(defun emms-mpv-handle-event-seek (_json-data)
+  "Handler for \"seek\" event."
+  (setq emms-mpv-seek-p t))
 
-(defun emms-mpv-event-property-handler (json-data)
-  "Handler for property change mpv events."
-  (pcase (alist-get 'name json-data)
-    ("pause"
-     ;; json returns either `t' or `:json-false' for pause value.
-     (when-let* ((pause (eq t (alist-get 'data json-data))))
-       (emms-mpv-sync-playing-time-maybe)
-       (with-current-buffer emms-playlist-buffer
-         (setq emms-player-paused-p pause)
-         (emms-mpv-update-global-state-maybe
-          (current-buffer) 'pause))))
-    ("eof-reached"
-     ;; XXX For some reason, eof is not always reached during
-     ;; over-seeking, `playback-abort' also doesn't help.
-     (when-let* ((eof (eq t (alist-get 'data json-data))))
-       (with-current-buffer emms-playlist-buffer
-         (emms-mpv-stopped)
-         (emms-mpv-next-noerror))))
-    ("duration"
-     (with-current-buffer emms-playlist-buffer
-       (let ((duration (alist-get 'data json-data))
-             (track (emms-playlist-selected-track)))
-         (when (and track (numberp duration) (> duration 0))
-           (setq duration (round duration))
-           (emms-track-set track 'info-playing-time duration)
-           (emms-track-set track 'info-playing-time-min (/ duration 60))
-           (emms-track-set track 'info-playing-time-sec (% duration 60))))))
-    ("metadata"
-     (when-let* ((info-alist (alist-get 'data json-data)))
-       (with-current-buffer emms-playlist-buffer
-         (emms-mpv-info-meta-update-track
-          info-alist (emms-playlist-selected-track)))))))
+(defun emms-mpv-handle-event-file-loaded (_json-data)
+  "Handler for \"file-loaded\" event."
+  (setq emms-mpv-file-loaded-p t))
+
+(defun emms-mpv-handle-event-end-file (json-data)
+  "Handler for \"end-file\" event."
+  (setq emms-mpv-seek-p nil
+        emms-mpv-file-loaded-p nil)
+  (with-current-buffer emms-playlist-buffer
+    (emms-mpv-stopped)
+    (pcase (alist-get 'reason json-data)
+      ("eof"
+       (emms-mpv-next-noerror))
+      ("stop"
+       (emms-mpv-update-global-state-maybe
+        emms-playlist-buffer 'stop))
+      ("error"
+       (let* ((track (emms-playlist-selected-track))
+              (info (alist-get 'file_error json-data))
+              (err-msg (concat "ERROR during playing \""
+                               (emms-track-get track 'name)
+                               "\""
+                               (and info (concat ": " info)))))
+         (message err-msg)
+         (emms-mpv-next-noerror))))))
+
+(defun emms-mpv-handle-event-idle (_json-data)
+  "Handler for \"idle\" event."
+  ;; Can mean any kind of error before or during playback.  Example
+  ;; can be access/format error, resulting in start+end without
+  ;; playback-restart.
+  (when emms-mpv-idle-timer
+    (cancel-timer emms-mpv-idle-timer))
+  (setq
+   emms-mpv-idle-timer (run-at-time emms-mpv-idle-delay
+                                    nil #'emms-mpv-event-idle)))
+
+(defun emms-mpv-handle-event-start-file (_json-data)
+  "Handler for \"start-file\" event."
+  (when emms-mpv-idle-timer
+    (cancel-timer emms-mpv-idle-timer)))
+
+(defun emms-mpv-handle-event-property-change (json-data)
+  "Handler for \"property-change\" event."
+  (when-let* ((property (alist-get 'name json-data))
+              (handler  (alist-get property
+                                   emms-mpv-property-handlers
+                                   nil nil #'string=)))
+    (funcall handler json-data)))
+
+(defun emms-mpv-handle-property-pause (json-data)
+  "Handler for \"pause\" property change."
+  ;; json returns either `t' or `:json-false' for pause value.
+  (let ((pause (eq t (alist-get 'data json-data))))
+    (when pause
+      (emms-mpv-sync-playing-time-maybe))
+    (with-current-buffer emms-playlist-buffer
+      (setq emms-player-paused-p pause)
+      (emms-mpv-update-global-state-maybe
+       (current-buffer) 'pause))))
+
+(defun emms-mpv-handle-property-eof-reached (json-data)
+  "Handler for \"eof-reached\" property change."
+  ;; XXX Sometimes, eof is not reached during over-seeking,
+  ;; playback simply stops several seconds before eof.
+  ;; Probably, mpv bug.
+  (when-let* ((eof (eq t (alist-get 'data json-data))))
+    (with-current-buffer emms-playlist-buffer
+      (emms-mpv-stopped)
+      (emms-mpv-next-noerror))))
+
+(defun emms-mpv-handle-property-duration (json-data)
+  "Handler for \"duration\" property change."
+  (with-current-buffer emms-playlist-buffer
+    (let ((duration (alist-get 'data json-data))
+          (track (emms-playlist-selected-track)))
+      (when (and track (numberp duration) (> duration 0))
+        (setq duration (round duration))
+        (emms-track-set track 'info-playing-time duration)
+        (emms-track-set track 'info-playing-time-min (/ duration 60))
+        (emms-track-set track 'info-playing-time-sec (% duration 60))))))
+
+(defun emms-mpv-handle-property-metadata (json-data)
+  "Handler for \"metadata\" property change."
+  (when-let* ((info-alist (alist-get 'data json-data)))
+    (with-current-buffer emms-playlist-buffer
+      (emms-mpv-info-meta-update-track
+       info-alist (emms-playlist-selected-track)))))
 
 (defun emms-mpv-info-meta-update-track (info-alist track)
   "Update TRACK with mpv metadata from INFO-ALIST.
