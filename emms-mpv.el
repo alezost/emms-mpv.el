@@ -894,12 +894,7 @@ in which case common HANDLER argument is ignored."
          (play-cmd `(batch
                      ((loadfile ,track-name replace))
                      ((set pause no)))))
-    ;; Try running play-cmd and retry it on connection failure
-    ;; e.g., if mpv died.
-    (emms-mpv-cmd play-cmd
-                  (lambda (_data error)
-                    (when (eq error 'connection-error)
-                      (emms-mpv-cmd play-cmd))))))
+    (emms-mpv-cmd play-cmd)))
 
 (defun emms-mpv-stop ()
   (when (memq this-command emms-mpv-stop-commands)
