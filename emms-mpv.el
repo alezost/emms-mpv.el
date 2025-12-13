@@ -240,6 +240,13 @@ If t, then we are somewhere between \"seek\" and
             1))
     ipc-id))
 
+(defun emms-mpv-playlist-buffers ()
+  "Return a list of live EMMS playlist buffers.
+This is similar to `emms-playlist-buffer-list' except it doesn't check
+for new buffers."
+  (setq emms-playlist-buffers
+        (seq-filter #'buffer-live-p emms-playlist-buffers)))
+
 
 ;;; Debug messages
 
@@ -769,13 +776,17 @@ the current one."
                           (emms-mpv-current-ipc-buffer))))
       (with-current-buffer ipc-buf
         (emms-mpv-proc-stop emms-mpv-proc)
-        (emms-mpv-ipc-stop emms-mpv-ipc-proc)))
+        (emms-mpv-ipc-stop emms-mpv-ipc-proc))
+      (kill-buffer ipc-buf))
     (let ((buffer (current-buffer)))
       (when (eq (default-value 'emms-playlist-buffer)
                 buffer)
-        (setq-default
-         emms-playlist-buffer
-         (car (remove buffer emms-playlist-buffers)))))))
+        (let ((next-pl (car (remove buffer (emms-mpv-playlist-buffers)))))
+          (setq-default emms-playlist-buffer next-pl)
+          (if next-pl
+              (emms-mpv-update-global-state 'all)
+            (emms-mpv-stopped)
+            (run-hooks 'emms-player-finished-hook)))))))
 
 (add-hook 'kill-buffer-hook #'emms-mpv-handle-kill-playlist)
 
