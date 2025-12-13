@@ -223,6 +223,24 @@ If t, then we are somewhere between \"seek\" and
 \"playback-restart\" events.")
 
 
+;;; General utils
+
+(defun emms-mpv-buffer-if-live (buffer)
+  "Return BUFFER if it is a live buffer, return nil otherwise."
+  (and buffer
+       (buffer-live-p buffer)
+       buffer))
+
+(defun emms-mpv-ipc-id-get ()
+  "Get new connection-unique id value, tracked via `emms-mpv-ipc-id'."
+  (let ((ipc-id emms-mpv-ipc-id))
+    (setq emms-mpv-ipc-id
+          (if (< emms-mpv-ipc-id emms-mpv-ipc-id-max)
+              (1+ emms-mpv-ipc-id)
+            1))
+    ipc-id))
+
+
 ;;; Debug messages
 
 (defvar emms-mpv-debug nil
@@ -264,15 +282,18 @@ See `message' for the meaning of FORMAT-STRING and ARGS."
   (let ((status (process-status proc)))
     (emms-mpv-debug-msg
      "proc[%s]: %s (status=%s)" proc event status)
-    (when (memq status '(exit signal))
-      (let* ((ipc-buf (with-current-buffer (process-buffer proc)
-                        emms-mpv-ipc-buffer))
-             (pl-buf (with-current-buffer ipc-buf
-                       emms-playlist-buffer)))
-        (with-current-buffer pl-buf
-          (emms-mpv-stopped)
-          (emms-mpv-update-global-state-maybe
-           pl-buf 'stop))))))
+    (when-let* ((exit    (memq status '(exit signal)))
+                (buf     (emms-mpv-buffer-if-live (process-buffer proc)))
+                (ipc-buf (emms-mpv-buffer-if-live
+                          (with-current-buffer buf
+                            emms-mpv-ipc-buffer)))
+                (pl-buf  (emms-mpv-buffer-if-live
+                          (with-current-buffer ipc-buf
+                            emms-playlist-buffer))))
+      (with-current-buffer pl-buf
+        (emms-mpv-stopped)
+        (emms-mpv-update-global-state-maybe
+         pl-buf 'stop)))))
 
 (defun emms-mpv-proc-init (ipc-buf)
   "Initialize new mpv process.
@@ -329,29 +350,28 @@ IPC-BUF is the buffer where `emms-mpv-proc' will be set to the started process."
             emms-mpv-property-handlers))))
 
 (defun emms-mpv-ipc-filter (proc s)
-  (let ((buf (process-buffer proc)))
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        (let ((moving (= (point)
-                         (process-mark proc))))
-          (save-excursion
-            (goto-char (process-mark proc))
-            (insert s)
-            (set-marker (process-mark proc)
-                        (point)))
-          (if moving (goto-char (process-mark proc))))
-        ;; Process/remove all complete lines of json, if any
-        (let ((p0 (point-min)))
-          (while
-              (progn
-                (goto-char p0)
-                (end-of-line)
-                (equal (following-char)
-                       ?\n))
-            (let* ((p1 (point))
-                   (json (buffer-substring p0 p1)))
-              (delete-region p0 (+ p1 1))
-              (emms-mpv-ipc-recv buf json))))))))
+  (when-let* ((buf (emms-mpv-buffer-if-live (process-buffer proc))))
+    (with-current-buffer buf
+      (let ((moving (= (point)
+                       (process-mark proc))))
+        (save-excursion
+          (goto-char (process-mark proc))
+          (insert s)
+          (set-marker (process-mark proc)
+                      (point)))
+        (if moving (goto-char (process-mark proc))))
+      ;; Process/remove all complete lines of json, if any
+      (let ((p0 (point-min)))
+        (while
+            (progn
+              (goto-char p0)
+              (end-of-line)
+              (equal (following-char)
+                     ?\n))
+          (let* ((p1 (point))
+                 (json (buffer-substring p0 p1)))
+            (delete-region p0 (+ p1 1))
+            (emms-mpv-ipc-recv buf json)))))))
 
 (defun emms-mpv-ipc-connect (delays)
   "Make IPC connection process in the current buffer.
@@ -415,15 +435,6 @@ Start mpv/connection if necessary."
 
 
 ;;; IPC protocol
-
-(defun emms-mpv-ipc-id-get ()
-  "Get new connection-unique id value, tracked via `emms-mpv-ipc-id'."
-  (let ((ipc-id emms-mpv-ipc-id))
-    (setq emms-mpv-ipc-id
-          (if (< emms-mpv-ipc-id emms-mpv-ipc-id-max)
-              (1+ emms-mpv-ipc-id)
-            1))
-    ipc-id))
 
 (defun emms-mpv-ipc-req-send (proc cmd &optional handler)
   "Send JSON IPC request to PROC and assign HANDLER to its response.
@@ -717,13 +728,15 @@ Supported KEYWORDS:
   - `vars': update all the above variables but do not run hooks;
 
   - `all': update all the variables and run appropriate hooks."
-  (emms-mpv-debug-msg "updating global state: %S" keywords)
-  (let ((keywords (cond ((memq 'vars keywords)
-                         '(vars))
-                        ((memq 'all keywords)
-                         '(all pause track))
-                        (t keywords))))
-    (with-current-buffer (default-value 'emms-playlist-buffer)
+  (when-let* ((pl-buf (emms-mpv-buffer-if-live
+                       (default-value 'emms-playlist-buffer)))
+              (keywords (cond ((memq 'vars keywords)
+                               '(vars))
+                              ((memq 'all keywords)
+                               '(all pause track))
+                              (t keywords))))
+    (emms-mpv-debug-msg "updating global state: %S" keywords)
+    (with-current-buffer pl-buf
       (dolist (keyword keywords)
         (cl-case keyword
           (vars
@@ -753,11 +766,11 @@ Supported KEYWORDS:
 Delete linked mpv and mpv ipc processes and make another EMMS playlist
 the current one."
   (when emms-playlist-buffer-p
-    (when-let* ((ipc-buf (emms-mpv-current-ipc-buffer)))
-      (when (buffer-live-p ipc-buf)
-        (with-current-buffer ipc-buf
-          (emms-mpv-proc-stop emms-mpv-proc)
-          (emms-mpv-ipc-stop emms-mpv-ipc-proc))))
+    (when-let* ((ipc-buf (emms-mpv-buffer-if-live
+                          (emms-mpv-current-ipc-buffer))))
+      (with-current-buffer ipc-buf
+        (emms-mpv-proc-stop emms-mpv-proc)
+        (emms-mpv-ipc-stop emms-mpv-ipc-proc)))
     (let ((buffer (current-buffer)))
       (when (eq (default-value 'emms-playlist-buffer)
                 buffer)
