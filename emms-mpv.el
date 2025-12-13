@@ -130,7 +130,7 @@ directly from these commands called by user."
   :type '(repeat function)
   :group 'emms-mpv)
 
-(defvar emms-mpv-proc-kill-delay 5
+(defvar emms-mpv-proc-kill-delay 3
   "Delay until SIGKILL gets sent to `emms-mpv-proc',
 if it refuses to exit cleanly on `emms-mpv-proc-stop'.")
 
@@ -333,9 +333,8 @@ IPC-BUF is the buffer where `emms-mpv-proc' will be set to the started process."
     (if (not (process-live-p proc))
         (delete-process proc)
       (interrupt-process proc)
-      (when emms-mpv-proc-kill-delay
-        (run-at-time emms-mpv-proc-kill-delay nil
-                     #'delete-process proc)))))
+      (run-at-time emms-mpv-proc-kill-delay nil
+                   #'delete-process proc))))
 
 
 ;;; IPC unix socket
