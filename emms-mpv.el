@@ -347,13 +347,13 @@ IPC-BUF is the buffer where `emms-mpv-proc' will be set to the started process."
 ;;; IPC unix socket
 
 (defun emms-mpv-ipc-sentinel (proc event)
-  (emms-mpv-debug-msg "ipc[%s]: %s" proc event)
-  (when (memq (process-status proc)
-              '(open run))
-    (with-current-buffer (process-buffer proc)
-      (mapc (lambda (assoc)
-              (emms-mpv-observe-property proc (car assoc)))
-            emms-mpv-property-handlers))))
+  (let ((status (process-status proc)))
+    (emms-mpv-debug-msg "ipc[%s] status: %s; event: %s" proc status event)
+    (when (memq status '(open run))
+      (with-current-buffer (process-buffer proc)
+        (mapc (lambda (assoc)
+                (emms-mpv-observe-property proc (car assoc)))
+              emms-mpv-property-handlers)))))
 
 (defun emms-mpv-ipc-filter (proc s)
   (when-let* ((buf (emms-mpv-buffer-if-live (process-buffer proc))))
