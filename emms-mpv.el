@@ -394,21 +394,23 @@ connection is not established."
                        (process-status emms-mpv-ipc-proc))))
       (emms-mpv-debug-msg "ipc status: %S" status)
       (unless (eq 'open status)
-        (when (or (null status) (eq 'failed status))
-          (if (or (null emms-mpv-proc)
-                  (eq 'exit (process-status emms-mpv-proc)))
-              (error "Stopped connecting to socket file, no mpv process")
-            (setq emms-mpv-ipc-proc
-                  (make-network-process
-                   :name "emms-mpv-ipc"
-                   :family 'local
-                   :service emms-mpv-ipc-socket
-                   :nowait t
-                   :coding '(utf-8 . utf-8)
-                   :buffer (current-buffer)
-                   :noquery t
-                   :filter #'emms-mpv-ipc-filter
-                   :sentinel #'emms-mpv-ipc-sentinel))))
+        (if (or (null emms-mpv-proc)
+                (eq 'exit (process-status emms-mpv-proc)))
+            (error "Stopped connecting to socket file, no mpv process")
+          (setq emms-mpv-ipc-proc
+                (make-network-process
+                 :name "emms-mpv-ipc"
+                 :family 'local
+                 :service emms-mpv-ipc-socket
+                 :nowait t
+                 :coding '(utf-8 . utf-8)
+                 :buffer (current-buffer)
+                 :noquery t
+                 :filter #'emms-mpv-ipc-filter
+                 :sentinel #'emms-mpv-ipc-sentinel))
+          (when (eq 'failed (process-status emms-mpv-ipc-proc))
+            (setq emms-mpv-ipc-proc nil)
+            (delete-process emms-mpv-ipc-proc)))
         (sleep-for (car delays))
         (emms-mpv-debug-msg "ipc: connect-delay %s" (car delays))
         (emms-mpv-ipc-connect (cdr delays))))))
