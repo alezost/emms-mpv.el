@@ -274,6 +274,36 @@ See `message' for the meaning of FORMAT-STRING and ARGS."
              args))))
 
 
+;;; Buffer and file names
+
+(defun emms-mpv-base-name (playlist-name)
+  "Return PLAYLIST-NAME prepared for mpv process and buffer names."
+  (let ((re "[ *]+"))
+    (replace-regexp-in-string
+     " " "-"                    ; get rid of internal spaces
+     (string-trim playlist-name re re))))
+
+(defun emms-mpv-process-name (playlist-name)
+  "Return mpv process name for EMMS PLAYLIST-NAME."
+  (concat "emms-mpv-" (emms-mpv-base-name playlist-name)))
+
+(defun emms-mpv-buffer-name (playlist-name)
+  "Return mpv buffer name for EMMS PLAYLIST-NAME."
+  (concat " *" (emms-mpv-process-name playlist-name) "*"))
+
+(defun emms-mpv-ipc-process-name (playlist-name)
+  "Return mpv IPC process name for EMMS PLAYLIST-NAME."
+  (concat "emms-mpv-ipc-" (emms-mpv-base-name playlist-name)))
+
+(defun emms-mpv-ipc-buffer-name (playlist-name)
+  "Return mpv IPC buffer name for EMMS PLAYLIST-NAME."
+  (concat " *" (emms-mpv-ipc-process-name playlist-name) "*"))
+
+(defun emms-mpv-ipc-socket-name (playlist-name)
+  "Return mpv IPC socket file name for EMMS PLAYLIST-NAME."
+  (concat (emms-mpv-ipc-process-name playlist-name) ".socket"))
+
+
 ;;; mpv process
 
 (defun emms-mpv-process-property-id (process property)
@@ -320,9 +350,10 @@ started process."
                                     (delq nil emms-mpv-environment)
                                   (append emms-mpv-environment
                                           process-environment)))
-           (buffer (generate-new-buffer " *emms-mpv*")))
+           (pl-name (buffer-name emms-playlist-buffer))
+           (buffer (generate-new-buffer (emms-mpv-buffer-name pl-name))))
       (setq emms-mpv-process
-            (make-process :name "emms-mpv"
+            (make-process :name (emms-mpv-process-name pl-name)
                           :buffer buffer
                           :command args
                           :noquery t
@@ -400,7 +431,8 @@ connection is not established."
             (error "Stopped connecting to socket file, no mpv process")
           (setq emms-mpv-ipc-process
                 (make-network-process
-                 :name "emms-mpv-ipc"
+                 :name (emms-mpv-ipc-process-name
+                        (buffer-name emms-playlist-buffer))
                  :family 'local
                  :service emms-mpv-ipc-socket
                  :nowait t
@@ -799,7 +831,9 @@ the current one."
 This function should be called only once, when a new EMMS playlist is
 created to associate the next mpv process (which does not exist yet)
 with it."
-  (let ((ipc-buf (generate-new-buffer "*emms-mpv-ipc*")))
+  (let* ((pl-name (buffer-name buffer))
+         (ipc-buf (generate-new-buffer
+                   (emms-mpv-ipc-buffer-name pl-name))))
     (with-current-buffer buffer
       (setq-local emms-mpv-ipc-buffer   ipc-buf
                   emms-player-playing-p nil
@@ -809,7 +843,7 @@ with it."
       (setq-local emms-playlist-buffer buffer
                   emms-mpv-ipc-socket
                   (concat (file-name-as-directory emms-directory)
-                          (buffer-name ipc-buf) ".socket")))))
+                          (emms-mpv-ipc-socket-name pl-name))))))
 
 (defun emms-mpv-playlist-new-current (buffer)
   "Make EMMS playlist BUFFER current.
