@@ -65,7 +65,7 @@
 ;;
 ;; - Each IPC buffer has some internal buffer-local variables to control
 ;;   mpv process using JSON IPC protocol (see mpv manual), mainly:
-;;   `emms-mpv-proc', `emms-mpv-ipc-proc', `emms-mpv-ipc-socket'.
+;;   `emms-mpv-process', `emms-mpv-ipc-process', `emms-mpv-ipc-socket'.
 
 ;;; Code:
 
@@ -110,8 +110,7 @@ For mpv binary path, see `emms-mpv-command-name'."
   :group 'emms-mpv)
 
 (defcustom emms-mpv-environment nil
-  "List of extra environment variables (\"VAR=value\" strings) to pass on to
-mpv process.
+  "List of extra environment variables to pass to mpv process.
 
 These are added on top of `process-environment' by default.
 Adding nil as an element to this list will discard emacs
@@ -130,9 +129,9 @@ directly from these commands called by user."
   :type '(repeat function)
   :group 'emms-mpv)
 
-(defvar emms-mpv-proc-kill-delay 3
-  "Delay until SIGKILL gets sent to `emms-mpv-proc',
-if it refuses to exit cleanly on `emms-mpv-proc-stop'.")
+(defvar emms-mpv-process-kill-delay 3
+  "Delay until SIGKILL gets sent to `emms-mpv-process',
+if it refuses to exit cleanly on `emms-mpv-process-stop'.")
 
 (defvar emms-mpv-ipc-connect-delays
   '(0.1 0.1 0.1 0.1 0.1 0.1 0.2 0.2 0.3 0.3 0.5 1 1)
@@ -189,16 +188,16 @@ See `emms-mpv-handle-event-handlers' for details.")
 ;; The rest variables should be set in each IPC buffer.
 
 (defvar-local emms-mpv-ipc-buffer nil
-  "Buffer to associate with `emms-mpv-ipc-proc' socket process.")
+  "Buffer to associate with `emms-mpv-ipc-process' socket process.")
 
 (defvar-local emms-mpv-ipc-socket nil
   "Unix socket file to use with mpv --input-ipc-socket= option.")
 
-(defvar-local emms-mpv-proc nil
+(defvar-local emms-mpv-process nil
   "Running mpv process, controlled over --input-ipc-server unix socket.")
 
-(defvar-local emms-mpv-ipc-proc nil
-  "Unix socket network process connected to running `emms-mpv-proc'
+(defvar-local emms-mpv-ipc-process nil
+  "Unix socket network process connected to running `emms-mpv-process'
 instance.")
 
 (defvar-local emms-mpv-ipc-req-table nil
@@ -277,20 +276,20 @@ See `message' for the meaning of FORMAT-STRING and ARGS."
 
 ;;; mpv process
 
-(defun emms-mpv-proc-property-id (proc prop)
-  "Get unique id for PROP or nil if it was already requested."
-  (let ((sym-id (intern (concat "mpv-sym-" prop))))
-    (unless (process-get proc sym-id)
+(defun emms-mpv-process-property-id (process property)
+  "Get unique id for PROPERTY or nil if it was already requested."
+  (let ((sym-id (intern (concat "mpv-sym-" property))))
+    (unless (process-get process sym-id)
       (let ((id (emms-mpv-ipc-id-get)))
-        (process-put proc sym-id id)
+        (process-put process sym-id id)
         id))))
 
-(defun emms-mpv-proc-sentinel (proc event)
-  (let ((status (process-status proc)))
+(defun emms-mpv-process-sentinel (process event)
+  (let ((status (process-status process)))
     (emms-mpv-debug-msg
-     "proc[%s]: %s (status=%s)" proc event status)
+     "process[%s]: %s (status=%s)" process event status)
     (when-let* ((exit    (memq status '(exit signal)))
-                (buf     (emms-mpv-buffer-if-live (process-buffer proc)))
+                (buf     (emms-mpv-buffer-if-live (process-buffer process)))
                 (ipc-buf (emms-mpv-buffer-if-live
                           (with-current-buffer buf
                             emms-mpv-ipc-buffer)))
@@ -302,11 +301,12 @@ See `message' for the meaning of FORMAT-STRING and ARGS."
         (emms-mpv-update-global-state-maybe
          pl-buf 'stop)))))
 
-(defun emms-mpv-proc-init (ipc-buf)
+(defun emms-mpv-process-init (ipc-buffer)
   "Initialize new mpv process.
-IPC-BUF is the buffer where `emms-mpv-proc' will be set to the started process."
-  (with-current-buffer ipc-buf
-    (emms-mpv-proc-stop emms-mpv-proc)
+IPC-BUFFER is the buffer where `emms-mpv-process' will be set to the
+started process."
+  (with-current-buffer ipc-buffer
+    (emms-mpv-process-stop emms-mpv-process)
     (unless (file-directory-p (file-name-directory emms-mpv-ipc-socket))
       (make-directory (file-name-directory emms-mpv-ipc-socket)))
     (let* ((args (append
@@ -321,51 +321,52 @@ IPC-BUF is the buffer where `emms-mpv-proc' will be set to the started process."
                                   (append emms-mpv-environment
                                           process-environment)))
            (buffer (generate-new-buffer " *emms-mpv*")))
-      (setq emms-mpv-proc
+      (setq emms-mpv-process
             (make-process :name "emms-mpv"
                           :buffer buffer
                           :command args
                           :noquery t
-                          :sentinel #'emms-mpv-proc-sentinel))
+                          :sentinel #'emms-mpv-process-sentinel))
       (with-current-buffer buffer
-        (setq emms-mpv-ipc-buffer ipc-buf))
-      (emms-mpv-debug-msg "proc[%s]: start %s" emms-mpv-proc args))))
+        (setq emms-mpv-ipc-buffer ipc-buffer))
+      (emms-mpv-debug-msg "process[%s]: start %s" emms-mpv-process args))))
 
-(defun emms-mpv-proc-stop (proc)
-  "Stop running PROC instance via SIGINT.
+(defun emms-mpv-process-stop (process)
+  "Stop running PROCESS instance via SIGINT.
 `delete-process' (SIGKILL) timer is started if
-`emms-mpv-proc-kill-delay' is non-nil."
-  (when proc
-    (emms-mpv-debug-msg "proc[%s]: stop" proc)
-    (if (not (process-live-p proc))
-        (delete-process proc)
-      (interrupt-process proc)
-      (run-at-time emms-mpv-proc-kill-delay nil
-                   #'delete-process proc))))
+`emms-mpv-process-kill-delay' is non-nil."
+  (when process
+    (emms-mpv-debug-msg "process[%s]: stop" process)
+    (if (not (process-live-p process))
+        (delete-process process)
+      (interrupt-process process)
+      (run-at-time emms-mpv-process-kill-delay nil
+                   #'delete-process process))))
 
 
 ;;; IPC unix socket
 
-(defun emms-mpv-ipc-sentinel (proc event)
-  (let ((status (process-status proc)))
-    (emms-mpv-debug-msg "ipc[%s] status: %s; event: %s" proc status event)
+(defun emms-mpv-ipc-sentinel (process event)
+  (let ((status (process-status process)))
+    (emms-mpv-debug-msg "ipc[%s] status: %s; event: %s"
+                        process status event)
     (when (memq status '(open run))
-      (with-current-buffer (process-buffer proc)
+      (with-current-buffer (process-buffer process)
         (mapc (lambda (assoc)
-                (emms-mpv-observe-property proc (car assoc)))
+                (emms-mpv-observe-property process (car assoc)))
               emms-mpv-property-handlers)))))
 
-(defun emms-mpv-ipc-filter (proc s)
-  (when-let* ((buf (emms-mpv-buffer-if-live (process-buffer proc))))
+(defun emms-mpv-ipc-filter (process string)
+  (when-let* ((buf (emms-mpv-buffer-if-live (process-buffer process))))
     (with-current-buffer buf
       (let ((moving (= (point)
-                       (process-mark proc))))
+                       (process-mark process))))
         (save-excursion
-          (goto-char (process-mark proc))
-          (insert s)
-          (set-marker (process-mark proc)
+          (goto-char (process-mark process))
+          (insert string)
+          (set-marker (process-mark process)
                       (point)))
-        (if moving (goto-char (process-mark proc))))
+        (if moving (goto-char (process-mark process))))
       ;; Process/remove all complete lines of json, if any
       (let ((p0 (point-min)))
         (while
@@ -386,18 +387,18 @@ This is a subroutine of `emms-mpv-ipc-init'.
 If connection attempt fails, wait for (car DELAYS) and pass (cdr DELAYS)
 to the next connection attempt.
 
-Set `emms-mpv-ipc-proc' to the resulting process or throw error if
+Set `emms-mpv-ipc-process' to the resulting process or throw error if
 connection is not established."
   (if (null delays)
       (error "Cannot connect to socket file %S" emms-mpv-ipc-socket)
-    (let ((status (and emms-mpv-ipc-proc
-                       (process-status emms-mpv-ipc-proc))))
+    (let ((status (and emms-mpv-ipc-process
+                       (process-status emms-mpv-ipc-process))))
       (emms-mpv-debug-msg "ipc status: %S" status)
       (unless (eq 'open status)
-        (if (or (null emms-mpv-proc)
-                (eq 'exit (process-status emms-mpv-proc)))
+        (if (or (null emms-mpv-process)
+                (eq 'exit (process-status emms-mpv-process)))
             (error "Stopped connecting to socket file, no mpv process")
-          (setq emms-mpv-ipc-proc
+          (setq emms-mpv-ipc-process
                 (make-network-process
                  :name "emms-mpv-ipc"
                  :family 'local
@@ -408,44 +409,44 @@ connection is not established."
                  :noquery t
                  :filter #'emms-mpv-ipc-filter
                  :sentinel #'emms-mpv-ipc-sentinel))
-          (when (eq 'failed (process-status emms-mpv-ipc-proc))
-            (setq emms-mpv-ipc-proc nil)
-            (delete-process emms-mpv-ipc-proc)))
+          (when (eq 'failed (process-status emms-mpv-ipc-process))
+            (setq emms-mpv-ipc-process nil)
+            (delete-process emms-mpv-ipc-process)))
         (sleep-for (car delays))
         (emms-mpv-debug-msg "ipc: connect-delay %s" (car delays))
         (emms-mpv-ipc-connect (cdr delays))))))
 
-(defun emms-mpv-ipc-init (ipc-buf)
+(defun emms-mpv-ipc-init (ipc-buffer)
   "Initialize new mpv ipc socket/file process and associated state."
-  (with-current-buffer ipc-buf
-    (emms-mpv-ipc-stop emms-mpv-ipc-proc)
+  (with-current-buffer ipc-buffer
+    (emms-mpv-ipc-stop emms-mpv-ipc-process)
     (emms-mpv-debug-msg "ipc: init")
     (erase-buffer)
     (setq
-     emms-mpv-ipc-proc nil
+     emms-mpv-ipc-process nil
      emms-mpv-ipc-req-table (make-hash-table))
     (emms-mpv-ipc-connect emms-mpv-ipc-connect-delays)))
 
-(defun emms-mpv-ipc-stop (proc)
-  (when (process-live-p proc)
+(defun emms-mpv-ipc-stop (process)
+  (when (process-live-p process)
     (emms-mpv-debug-msg "ipc: stop")
-    (delete-process proc)))
+    (delete-process process)))
 
-(defun emms-mpv-ipc (ipc-buf)
-  "Return open IPC process in IPC-BUF buffer.
+(defun emms-mpv-ipc (ipc-buffer)
+  "Return open IPC process in IPC-BUFFER.
 Start mpv/connection if necessary."
-  (with-current-buffer ipc-buf
-    (unless (process-live-p emms-mpv-proc)
-      (emms-mpv-proc-init ipc-buf))
-    (unless (process-live-p emms-mpv-ipc-proc)
-      (emms-mpv-ipc-init ipc-buf))
-    emms-mpv-ipc-proc))
+  (with-current-buffer ipc-buffer
+    (unless (process-live-p emms-mpv-process)
+      (emms-mpv-process-init ipc-buffer))
+    (unless (process-live-p emms-mpv-ipc-process)
+      (emms-mpv-ipc-init ipc-buffer))
+    emms-mpv-ipc-process))
 
 
 ;;; IPC protocol
 
-(defun emms-mpv-ipc-req-send (proc cmd &optional handler)
-  "Send JSON IPC request to PROC and assign HANDLER to its response.
+(defun emms-mpv-ipc-req-send (process cmd &optional handler)
+  "Send JSON IPC request to PROCESS and assign HANDLER to its response.
 
 CMD value is encoded via `json-encode'.
 
@@ -457,7 +458,7 @@ If HANDLER is nil, `emms-mpv-ipc-req-error-printer' will be used to log
 errors.  Multiple commands can be batched in one list as
 \\='(batch (cmd1 . handler1) ...).  In this case, HANDLER argument is
 ignored."
-  (with-current-buffer (process-buffer proc)
+  (with-current-buffer (process-buffer process)
     (dolist (cmd-and-handler
              (if (and (listp cmd)
                       (eq (car cmd) 'batch))
@@ -474,10 +475,10 @@ ignored."
           (condition-case _err
               ;; On any disconnect, assume that mpv process is to blame
               ;; and force restart.
-              (process-send-string proc json)
+              (process-send-string process json)
             (error
-             (emms-mpv-proc-stop emms-mpv-proc)
-             (setq emms-mpv-proc nil)
+             (emms-mpv-process-stop emms-mpv-process)
+             (setq emms-mpv-process nil)
              (funcall handler nil 'connection-error)
              (setq handler nil)))
           (when handler (puthash req-id handler emms-mpv-ipc-req-table)))))))
@@ -496,11 +497,11 @@ ignored."
 errors, if any."
   (when err (message "emms-mpv ipc-error: %s" err)))
 
-(defun emms-mpv-ipc-recv (ipc-buf json)
+(defun emms-mpv-ipc-recv (ipc-buffer json)
   "Handler for all JSON lines from mpv process."
   (emms-mpv-debug-msg "json << %s" json)
   (let ((json-data (json-read-from-string json)))
-    (with-current-buffer ipc-buf
+    (with-current-buffer ipc-buffer
       (when-let* ((req-id (alist-get 'request_id json-data)))
         ;; Response to command
         (emms-mpv-ipc-req-resolve req-id
@@ -511,12 +512,10 @@ errors, if any."
                                       nil nil #'string=)))
         (funcall handler json-data)))))
 
-(defun emms-mpv-observe-property (proc prop)
-  "Send mpv observe_property command for property PROP.
-Only sends command once per process, removing any
-potential duplication if used for same properties from different functions."
-  (when-let* ((id (emms-mpv-proc-property-id proc prop)))
-    (emms-mpv-ipc-req-send proc (list 'observe_property id prop))))
+(defun emms-mpv-observe-property (process property)
+  "Send to mpv PROCESS \"observe_property\" command for PROPERTY."
+  (when-let* ((id (emms-mpv-process-property-id process property)))
+    (emms-mpv-ipc-req-send process (list 'observe_property id property))))
 
 (defun emms-mpv-event-idle ()
   "Delayed check for switching tracks when mpv goes idle for no good reason."
@@ -777,8 +776,8 @@ the current one."
     (when-let* ((ipc-buf (emms-mpv-buffer-if-live
                           (emms-mpv-current-ipc-buffer))))
       (with-current-buffer ipc-buf
-        (emms-mpv-proc-stop emms-mpv-proc)
-        (emms-mpv-ipc-stop emms-mpv-ipc-proc))
+        (emms-mpv-process-stop emms-mpv-process)
+        (emms-mpv-ipc-stop emms-mpv-ipc-process))
       (kill-buffer ipc-buf))
     (let ((buffer (current-buffer)))
       (when (eq (default-value 'emms-playlist-buffer)
