@@ -377,7 +377,7 @@ started process."
 
 ;;; IPC unix socket
 
-(defun emms-mpv-ipc-sentinel (process event)
+(defun emms-mpv-ipc-process-sentinel (process event)
   (let ((status (process-status process)))
     (emms-mpv-debug-msg "ipc[%s] status: %s; event: %s"
                         process status event)
@@ -387,7 +387,7 @@ started process."
                 (emms-mpv-observe-property process (car assoc)))
               emms-mpv-property-handlers)))))
 
-(defun emms-mpv-ipc-filter (process string)
+(defun emms-mpv-ipc-process-filter (process string)
   (when-let* ((buf (emms-mpv-buffer-if-live (process-buffer process))))
     (with-current-buffer buf
       (let ((moving (= (point)
@@ -413,7 +413,7 @@ started process."
 
 (defun emms-mpv-ipc-connect (delays)
   "Make IPC connection process in the current buffer.
-This is a subroutine of `emms-mpv-ipc-init'.
+This is a subroutine of `emms-mpv-ipc-process-init'.
 
 If connection attempt fails, wait for (car DELAYS) and pass (cdr DELAYS)
 to the next connection attempt.
@@ -439,8 +439,8 @@ connection is not established."
                  :coding '(utf-8 . utf-8)
                  :buffer (current-buffer)
                  :noquery t
-                 :filter #'emms-mpv-ipc-filter
-                 :sentinel #'emms-mpv-ipc-sentinel))
+                 :filter #'emms-mpv-ipc-process-filter
+                 :sentinel #'emms-mpv-ipc-process-sentinel))
           (when (eq 'failed (process-status emms-mpv-ipc-process))
             (setq emms-mpv-ipc-process nil)
             (delete-process emms-mpv-ipc-process)))
@@ -448,13 +448,13 @@ connection is not established."
         (emms-mpv-debug-msg "ipc: connect-delay %s" (car delays))
         (emms-mpv-ipc-connect (cdr delays))))))
 
-(defun emms-mpv-ipc-init (ipc-buffer)
+(defun emms-mpv-ipc-process-init (ipc-buffer)
   "Initialize new mpv ipc socket/file process and associated state."
   (with-current-buffer ipc-buffer
     (unless (emms-mpv-buffer-if-live emms-playlist-buffer)
       (error "Cannot find EMMS playlist for \"%s\" buffer"
              (buffer-name ipc-buffer)))
-    (emms-mpv-ipc-stop emms-mpv-ipc-process)
+    (emms-mpv-ipc-process-stop emms-mpv-ipc-process)
     (emms-mpv-debug-msg "ipc: init")
     (erase-buffer)
     (setq
@@ -462,7 +462,7 @@ connection is not established."
      emms-mpv-ipc-req-table (make-hash-table))
     (emms-mpv-ipc-connect emms-mpv-ipc-connect-delays)))
 
-(defun emms-mpv-ipc-stop (process)
+(defun emms-mpv-ipc-process-stop (process)
   (when (process-live-p process)
     (emms-mpv-debug-msg "ipc: stop")
     (delete-process process)))
@@ -474,7 +474,7 @@ Start mpv/connection if necessary."
     (unless (process-live-p emms-mpv-process)
       (emms-mpv-process-init ipc-buffer))
     (unless (process-live-p emms-mpv-ipc-process)
-      (emms-mpv-ipc-init ipc-buffer))
+      (emms-mpv-ipc-process-init ipc-buffer))
     emms-mpv-ipc-process))
 
 
@@ -812,7 +812,7 @@ the current one."
                           (emms-mpv-current-ipc-buffer))))
       (with-current-buffer ipc-buf
         (emms-mpv-process-stop emms-mpv-process)
-        (emms-mpv-ipc-stop emms-mpv-ipc-process))
+        (emms-mpv-ipc-process-stop emms-mpv-ipc-process))
       (kill-buffer ipc-buf))
     (let ((buffer (current-buffer)))
       (when (eq (default-value 'emms-playlist-buffer)
