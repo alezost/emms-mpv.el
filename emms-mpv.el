@@ -419,6 +419,9 @@ connection is not established."
 (defun emms-mpv-ipc-init (ipc-buffer)
   "Initialize new mpv ipc socket/file process and associated state."
   (with-current-buffer ipc-buffer
+    (unless (emms-mpv-buffer-if-live emms-playlist-buffer)
+      (error "Cannot find EMMS playlist for \"%s\" buffer"
+             (buffer-name ipc-buffer)))
     (emms-mpv-ipc-stop emms-mpv-ipc-process)
     (emms-mpv-debug-msg "ipc: init")
     (erase-buffer)
