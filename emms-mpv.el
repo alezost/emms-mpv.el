@@ -684,37 +684,35 @@ instance is the global playlist."
        info-alist (emms-playlist-selected-track)))))
 
 (defun emms-mpv-info-meta-update-track (info-alist track)
-  "Update TRACK with mpv metadata from INFO-ALIST.
-`emms-playlist-current-selected-track' is used by default."
-  (mapc (lambda (cc)
-          (setcar cc (intern (downcase (symbol-name (car cc))))))
-        info-alist)
-  (cl-macrolet
-      ((key (k)
-         `(alist-get ',k info-alist))
-       (set-track-info (track &rest body)
-         (cons 'progn
-               (cl-loop
-                for (k v)
-                on body by 'cddr collect
-                `(let ((value ,v))
-                   (when value
-                     (emms-track-set ,track ',(intern (format "info-%s" k))
-                                     value)))))))
-    (set-track-info track
-                    title (or (key title)
-                              (unless (string= "" (key icy-title))
-                                (key icy-title))
-                              (key icy-name))
-                    artist (or (key artist)
-                               (key album_artist)
-                               (key icy-name))
-                    album (key album)
-                    tracknumber (key track)
-                    year (key date)
-                    genre (key genre)
-                    note (key comment))
-    (emms-track-updated track)))
+  "Update TRACK with mpv metadata from INFO-ALIST."
+  (emms-mpv-debug-msg "updating metadata for track: %s"
+                      (emms-track-name track))
+  ;; Is downcasing keys from `info-alist' really needed?
+  ;;
+  ;; (mapc (lambda (cc)
+  ;;         (setcar cc (intern (downcase (symbol-name (car cc))))))
+  ;;       info-alist)
+  (let ((updated nil))
+    (cl-macrolet
+        ((key (k)
+           `(let ((v (alist-get ',k info-alist)))
+              (unless (equal v "")
+                v)))
+         (ets (name value)
+           `(when-let* ((val ,value))
+              (setq updated t)
+              (emms-track-set track ',name val))))
+      (ets info-title       (or (key title)
+                                (key icy-title)
+                                (key icy-name)))
+      (ets info-artist      (or (key artist) (key album_artist)))
+      (ets info-album       (key album))
+      (ets info-tracknumber (key track))
+      (ets info-date        (or (key date) (key year)))
+      (ets info-genre       (key genre))
+      (ets info-note        (key comment)))
+    (when updated
+      (emms-track-updated track))))
 
 
 ;;; Hacks to make EMMS work with multiple players+playlists
