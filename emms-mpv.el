@@ -675,8 +675,6 @@ instance is the global playlist."
                             (emms-track-name track))
         (setq duration (round duration))
         (emms-track-set track 'info-playing-time duration)
-        (emms-track-set track 'info-playing-time-min (/ duration 60))
-        (emms-track-set track 'info-playing-time-sec (% duration 60))
         (al/emms-mpv-update-current-track)))))
 
 (defun emms-mpv-handle-property-metadata (json-data)
