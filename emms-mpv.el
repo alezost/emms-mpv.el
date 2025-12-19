@@ -712,7 +712,7 @@ instance is the global playlist."
       (ets info-genre       (key genre))
       (ets info-note        (key comment)))
     (when updated
-      (emms-track-updated track))))
+      (al/emms-mpv-update-current-track))))
 
 
 ;;; Hacks to make EMMS work with multiple players+playlists
@@ -744,6 +744,18 @@ This is similar to `emms-next-noerror', except it uses
     (emms-player-start (emms-playlist-selected-track)))
    (t
     (message "No next track in playlist"))))
+
+(defun al/emms-mpv-update-current-track ()
+  "Update `emms-playlist-selected-track' in the current playlist."
+  ;; We don't use `emms-track-updated' because it calls
+  ;; `emms-playlist-track-updated' which checks all(!) emacs buffers and
+  ;; updates the track in all playlists.
+  (when emms-playlist-selected-marker
+    (save-excursion
+      (goto-char emms-playlist-selected-marker)
+      (emms-playlist-update-track))
+    (emms-mpv-update-global-state-maybe
+     (current-buffer) 'track)))
 
 (defun emms-mpv-update-global-state-maybe (buffer &rest keywords)
   "Update global state if BUFFER is the current EMMS playlist."
