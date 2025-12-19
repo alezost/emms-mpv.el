@@ -671,10 +671,13 @@ instance is the global playlist."
     (let ((duration (alist-get 'data json-data))
           (track (emms-playlist-selected-track)))
       (when (and track (numberp duration) (> duration 0))
+        (emms-mpv-debug-msg "updating duration for track: %s"
+                            (emms-track-name track))
         (setq duration (round duration))
         (emms-track-set track 'info-playing-time duration)
         (emms-track-set track 'info-playing-time-min (/ duration 60))
-        (emms-track-set track 'info-playing-time-sec (% duration 60))))))
+        (emms-track-set track 'info-playing-time-sec (% duration 60))
+        (al/emms-mpv-update-current-track)))))
 
 (defun emms-mpv-handle-property-metadata (json-data)
   "Handler for \"metadata\" property change."
