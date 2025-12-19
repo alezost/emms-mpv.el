@@ -681,19 +681,14 @@ instance is the global playlist."
   "Handler for \"metadata\" property change."
   (when-let* ((info-alist (alist-get 'data json-data)))
     (with-current-buffer emms-playlist-buffer
-      (emms-mpv-info-meta-update-track
-       info-alist (emms-playlist-selected-track)))))
+      (emms-mpv-update-metadata info-alist))))
 
-(defun emms-mpv-info-meta-update-track (info-alist track)
-  "Update TRACK with mpv metadata from INFO-ALIST."
-  (emms-mpv-debug-msg "updating metadata for track: %s"
-                      (emms-track-name track))
-  ;; Is downcasing keys from `info-alist' really needed?
-  ;;
-  ;; (mapc (lambda (cc)
-  ;;         (setcar cc (intern (downcase (symbol-name (car cc))))))
-  ;;       info-alist)
-  (let ((updated nil))
+(defun emms-mpv-update-metadata (info-alist)
+  "Update current track with mpv metadata from INFO-ALIST."
+  (let ((track (emms-playlist-selected-track))
+        (updated nil))
+    (emms-mpv-debug-msg "updating metadata for track: %s"
+                        (emms-track-name track))
     (cl-macrolet
         ((key (k)
            `(let ((v (alist-get ',k info-alist)))
