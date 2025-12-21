@@ -69,10 +69,11 @@
 
 ;;; Code:
 
+(eval-when-compile (require 'cl-lib))
+(require 'seq)
+(require 'json)
 (require 'emms)
 (require 'emms-player-simple)
-(require 'json)
-(require 'cl-lib)
 
 (defgroup emms-mpv nil
   "EMMS player for mpv."
