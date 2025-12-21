@@ -6,6 +6,8 @@
 ;; Authors: Mike Kazantsev <mk.fraggod@gmail.com>
 ;;          Alex Kost <alezost@gmail.com>
 ;; Version: 0.1
+;; Package-Requires: ((cl-lib "0.5") (seq))
+;; URL: https://github.com/alezost/emms-mpv.el
 ;; Keywords: emms
 
 ;; This program is free software; you can redistribute it and/or modify
