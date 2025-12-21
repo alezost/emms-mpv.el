@@ -1,0 +1,102 @@
+[[https://www.gnu.org/licenses/gpl-3.0.txt][file:https://img.shields.io/badge/license-GPL_3-orange.svg]]
+
+** About
+
+This Emacs package provides EMMS backend for =mpv= player.  It is a fork
+of =emms-player-mpv= which is part of EMMS.  The main differences
+between =emms-mpv.el= and =emms-player-mpv.el= are:
+
+- =emms-mpv= supports multiple =mpv= instances i.e., it will start a new
+mpv process for each EMMS playlist you create with =emms-playlist-new=
+command.
+
+- =emms-mpv= switches between video tracks without flickering because
+=mpv= does not recreate video frame for every track as it is done by
+=emms-player-mpv=.  So a new video track is started smooth and fast.
+
+- =emms-mpv= handles pause/unpause events i.e., when you pause mpv
+player itself, EMMS get a signal that the player is paused
+(=emms-player-mpv= doesn't do it).  So your mode line will be
+updated correctly for (un)pausing, if you use =emms-state-mode= or
+=emms-playing-time-mode=+=emms-mode-line-mode= or something similar.
+
+See also "Commentary" section of [[file:emms-mpv.el]] for more details.
+
+** Installation
+
+*** Automatic
+
+You may install this package using [[https://github.com/quelpa/quelpa][Quelpa]]:
+
+#+BEGIN_SRC emacs-lisp
+(quelpa '(insert-pair :fetcher github :repo "alezost/emms-mpv.el"))
+#+END_SRC
+
+*** Manual
+
+For the manual installation, clone the repo and add the directory to
+=load-path=.
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'load-path "/path/to/emms-mpv-dir")
+#+END_SRC
+
+** Configuration and Usage
+
+To make EMMS use =emms-mpv= instead of =emms-player-mpv=, you can do
+something like this:
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'emms
+  (when (require 'emms-mpv nil t)
+    (push 'emms-mpv emms-player-list)))
+#+END_SRC
+
+Make sure to require =emms-mpv= after (or better, instead of)
+=emms-player-mpv=.  I.e., if you use some emms-setup function (like
+=emms-minimalistic= or =emms-all=), put =(require 'emms-mpv nil t)=
+expression after that setup call.
+
+*** Advanced usage
+
+If you wish, you can add or change the way how =mpv= events and property
+changes are handled with the following variables:
+
+- =emms-mpv-event-handlers=,
+- =emms-mpv-property-handlers=.
+
+Finally, here is an example how you can use =emms-mpv= code to get an
+mpv property for the current track and to adjust the speed of the
+playback (actually, you can do the same with =emms-player-mpv= too):
+
+#+BEGIN_SRC emacs-lisp
+(defun example-emms-mpv-speed-up (value)
+  "Increase playback speed by VALUE."
+  (interactive
+   (list (read-number "Increase speed by: " 0.1)))
+  (emms-mpv-cmd
+   ;; "osd-auto" to show speed in mpv OSD
+   (list "osd-auto" "add" "speed" value)
+   (lambda (_value _error)
+     (example-emms-mpv-show-property "speed"))))
+
+(defun example-emms-mpv-show-property (property)
+  "Display PROPERTY of the current track."
+  (interactive "smpv property: ")
+  (emms-mpv-cmd
+   (list "get_property" property)
+   (lambda (value error)
+     (if error
+         (error "mpv refuses to return `%s' property" property)
+       (message "mpv property `%s': %s." property value)))))
+#+END_SRC
+
+*Note*: use =lexical-binding= for this code, otherwise you will get the
+following error:
+
+#+BEGIN_SRC example
+Symbol’s value as variable is void: property
+#+END_SRC
+
+because =lambda= inside =example-emms-mpv-show-property= relies on
+=property= variable which is defined outside this =lambda=.
