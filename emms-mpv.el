@@ -184,6 +184,25 @@ buffer so all variables for the current mpv process are available.")
   "Alist of mpv properties and their handlers.
 See `emms-mpv-handle-event-handlers' for details.")
 
+(defvar emms-mpv-metadata-alist
+  '((info-title       icy-title icy-name title)
+    (info-artist      artist album_artist uploader)
+    (info-album       album)
+    (info-tracknumber track)
+    (info-date        date TDRC)
+    (info-year        year TYER TORY)
+    (info-genre       genre)
+    (info-note        comment icy-description))
+  "Variable used to update track info according to metadata.
+
+This is alist of (EMMS-KEY . (META-KEY ...)) values.
+EMMS-KEY is a track key where metadata info will be stored.
+META-KEY is a metadata key returned by mpv.
+
+Each META-KEY is checked in order e.g., if metadata for the current
+track contains `icy-title' then `info-title' is updated with its value,
+and the rest keys (`icy-name' and `title') are not checked.")
+
 
 ;;; Buffer-local variables
 
@@ -688,30 +707,23 @@ instance is the global playlist."
 
 (defun emms-mpv-update-metadata (info-alist)
   "Update current track with mpv metadata from INFO-ALIST."
-  (let ((track (emms-playlist-selected-track))
-        (updated nil))
-    (emms-mpv-debug-msg "updating metadata for track: %s"
-                        (emms-track-name track))
-    (cl-macrolet
-        ((key (k)
-           `(let ((v (alist-get ',k info-alist)))
-              (unless (equal v "")
-                v)))
-         (ets (name value)
-           `(when-let* ((val ,value))
-              (setq updated t)
-              (emms-track-set track ',name val))))
-      (ets info-title       (or (key title)
-                                (key icy-title)
-                                (key icy-name)))
-      (ets info-artist      (or (key artist) (key album_artist)))
-      (ets info-album       (key album))
-      (ets info-tracknumber (key track))
-      (ets info-date        (or (key date) (key year)))
-      (ets info-genre       (key genre))
-      (ets info-note        (key comment)))
-    (when updated
-      (emms-mpv-update-current-track))))
+  (cl-labels
+      ((get-first-value (keys)
+         (and keys
+              (if-let* ((val (alist-get (car keys) info-alist))
+                        (not-empty (not (string= val ""))))
+                  val
+                (get-first-value (cdr keys))))))
+    (let ((track (emms-playlist-selected-track))
+          (updated nil))
+      (emms-mpv-debug-msg "updating metadata for track: %s"
+                          (emms-track-name track))
+      (dolist (assoc emms-mpv-metadata-alist)
+        (when-let* ((val (get-first-value (cdr assoc))))
+          (setq updated t)
+          (emms-track-set track (car assoc) val)))
+      (when updated
+        (emms-mpv-update-current-track)))))
 
 
 ;;; Hacks to make EMMS work with multiple players+playlists
