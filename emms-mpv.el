@@ -703,10 +703,14 @@ instance is the global playlist."
   "Handler for \"metadata\" property change."
   (when-let* ((info-alist (alist-get 'data json-data)))
     (with-current-buffer emms-playlist-buffer
-      (emms-mpv-update-metadata info-alist))))
+      (let* ((track (emms-playlist-selected-track))
+             (type (emms-track-type track)))
+        (and (emms-mpv-update-metadata track info-alist)
+             (emms-mpv-update-current-track))))))
 
-(defun emms-mpv-update-metadata (info-alist)
-  "Update current track with mpv metadata from INFO-ALIST."
+(defun emms-mpv-update-metadata (track info-alist)
+  "Update TRACK info with mpv metadata from INFO-ALIST.
+Return non-nil if track is updated, nil otherwise."
   (cl-labels
       ((get-first-value (keys)
          (and keys
@@ -714,16 +718,14 @@ instance is the global playlist."
                         (not-empty (not (string= val ""))))
                   val
                 (get-first-value (cdr keys))))))
-    (let ((track (emms-playlist-selected-track))
-          (updated nil))
+    (let ((updated nil))
       (emms-mpv-debug-msg "updating metadata for track: %s"
                           (emms-track-name track))
       (dolist (assoc emms-mpv-metadata-alist)
         (when-let* ((val (get-first-value (cdr assoc))))
           (setq updated t)
           (emms-track-set track (car assoc) val)))
-      (when updated
-        (emms-mpv-update-current-track)))))
+      updated)))
 
 
 ;;; Hacks to make EMMS work with multiple players+playlists
