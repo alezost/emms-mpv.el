@@ -184,6 +184,10 @@ buffer so all variables for the current mpv process are available.")
   "Alist of mpv properties and their handlers.
 See `emms-mpv-handle-event-handlers' for details.")
 
+(defvar emms-mpv-metadata-track-types
+  '(url streamlist)
+  "List of track types where metadata update should be handled.")
+
 (defvar emms-mpv-metadata-alist
   '((info-title       icy-title icy-name title)
     (info-artist      artist album_artist uploader)
@@ -705,7 +709,8 @@ instance is the global playlist."
     (with-current-buffer emms-playlist-buffer
       (let* ((track (emms-playlist-selected-track))
              (type (emms-track-type track)))
-        (and (emms-mpv-update-metadata track info-alist)
+        (and (memq type emms-mpv-metadata-track-types)
+             (emms-mpv-update-metadata track info-alist)
              (emms-mpv-update-current-track))))))
 
 (defun emms-mpv-update-metadata (track info-alist)
