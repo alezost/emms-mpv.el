@@ -678,7 +678,7 @@ instance is the global playlist."
                             (emms-track-name track))
         (setq duration (round duration))
         (emms-track-set track 'info-playing-time duration)
-        (al/emms-mpv-update-current-track)))))
+        (emms-mpv-update-current-track)))))
 
 (defun emms-mpv-handle-property-metadata (json-data)
   "Handler for \"metadata\" property change."
@@ -711,7 +711,7 @@ instance is the global playlist."
       (ets info-genre       (key genre))
       (ets info-note        (key comment)))
     (when updated
-      (al/emms-mpv-update-current-track))))
+      (emms-mpv-update-current-track))))
 
 
 ;;; Hacks to make EMMS work with multiple players+playlists
@@ -744,7 +744,7 @@ This is similar to `emms-next-noerror', except it uses
    (t
     (message "No next track in playlist"))))
 
-(defun al/emms-mpv-update-current-track ()
+(defun emms-mpv-update-current-track ()
   "Update `emms-playlist-selected-track' in the current playlist."
   ;; We don't use `emms-track-updated' because it calls
   ;; `emms-playlist-track-updated' which checks all(!) emacs buffers and
