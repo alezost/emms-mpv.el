@@ -17,8 +17,8 @@ command.
 - =emms-mpv= handles pause/unpause events i.e., when you pause mpv
 player itself, EMMS get a signal that the player is paused
 (=emms-player-mpv= doesn't do it).  So your mode line will be
-updated correctly for (un)pausing, if you use =emms-state-mode= or
-=emms-playing-time-mode=+=emms-mode-line-mode= or something similar.
+updated correctly for (un)pausing, if you use [[https://github.com/alezost/emms-state.el][emms-state-mode]] or
+=emms-playing-time-mode= + =emms-mode-line-mode= or something similar.
 
 See also "Commentary" section of [[file:emms-mpv.el]] for more details.
 
