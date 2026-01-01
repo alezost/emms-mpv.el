@@ -1,7 +1,7 @@
 ;;; emms-mpv.el --- Support for multiple instances of mpv for EMMS  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2018-2024 Free Software Foundation, Inc.
-;; Copyright (C) 2025 Alex Kost
+;; Copyright (C) 2025-2026 Alex Kost
 
 ;; Authors: Mike Kazantsev <mk.fraggod@gmail.com>
 ;;          Alex Kost <alezost@gmail.com>
@@ -179,6 +179,9 @@ buffer so all variables for the current mpv process are available.")
 (defvar emms-mpv-property-handlers
   '(("pause"            . emms-mpv-handle-property-pause)
     ("eof-reached"      . emms-mpv-handle-property-eof-reached)
+    ;; It is not recommended to remove "seekable" from this alist.
+    ;; See `emms-mpv-seekable-p' for details.
+    ("seekable"         . emms-mpv-handle-property-seekable)
     ("duration"         . emms-mpv-handle-property-duration)
     ("metadata"         . emms-mpv-handle-property-metadata))
   "Alist of mpv properties and their handlers.
@@ -246,6 +249,25 @@ If t, then we are somewhere between \"file-loaded\" and
   "State of the latest \"seek\" event.
 If t, then we are somewhere between \"seek\" and
 \"playback-restart\" events.")
+
+(defvar-local emms-mpv-seekable-p nil
+  "State of \"seekable\" property of the current track.
+
+This variable is updated by `emms-mpv-handle-property-seekable'.
+
+If t, then the current track is seekable and we can update its duration
+safely.  If nil, then `emms-mpv-handle-property-duration' does not
+update track duration.
+
+For seekable sources (like usual files), mpv updates playback
+time (i.e., \"duration\" property) only once, on the track start.
+
+For non-seekable sources (like streams), mpv updates duration several
+times a second, which is too much.  Moreover, these updates are
+completely useless because this duration does not show the playback time
+of the current track, it is just the current playing time starting from
+zero.  That's why it is not recommended to keep \"duration\" without
+\"seekable\" in `emms-mpv-property-handlers'.")
 
 
 ;;; General utils
@@ -691,17 +713,23 @@ instance is the global playlist."
       (emms-mpv-stopped)
       (emms-mpv-next-noerror))))
 
+(defun emms-mpv-handle-property-seekable (json-data)
+  "Handler for \"seekable\" property change."
+  (setq emms-mpv-seekable-p
+        (eq t (alist-get 'data json-data))))
+
 (defun emms-mpv-handle-property-duration (json-data)
   "Handler for \"duration\" property change."
-  (with-current-buffer emms-playlist-buffer
-    (let ((duration (alist-get 'data json-data))
-          (track (emms-playlist-selected-track)))
-      (when (and track (numberp duration) (> duration 0))
-        (emms-mpv-debug-msg "updating duration for track: %s"
-                            (emms-track-name track))
-        (setq duration (round duration))
-        (emms-track-set track 'info-playing-time duration)
-        (emms-mpv-update-current-track)))))
+  (when emms-mpv-seekable-p
+    (with-current-buffer emms-playlist-buffer
+      (let ((duration (alist-get 'data json-data))
+            (track (emms-playlist-selected-track)))
+        (when (and track (numberp duration) (> duration 0))
+          (emms-mpv-debug-msg "updating duration for track: %s"
+                              (emms-track-name track))
+          (setq duration (round duration))
+          (emms-track-set track 'info-playing-time duration)
+          (emms-mpv-update-current-track))))))
 
 (defun emms-mpv-handle-property-metadata (json-data)
   "Handler for \"metadata\" property change."
