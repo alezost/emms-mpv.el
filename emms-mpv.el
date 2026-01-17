@@ -787,10 +787,11 @@ This is similar to `emms-next-noerror', except it uses
    (emms-repeat-track
     (emms-player-start (emms-playlist-selected-track)))
    (emms-single-track
-    (emms-player-stop))
+    (emms-mpv-cmd 'stop))
    ((ignore-errors (emms-playlist-select-next) t)
     (emms-player-start (emms-playlist-selected-track)))
    (t
+    (emms-mpv-cmd 'stop)
     (message "No next track in playlist"))))
 
 (defun emms-mpv-update-current-track ()
