@@ -543,10 +543,12 @@ errors.  Multiple commands can be batched in one list as
 ignored."
   (with-current-buffer (process-buffer process)
     (dolist (cmd-and-handler
-             (if (and (listp cmd)
-                      (eq (car cmd) 'batch))
-                 (cdr cmd)
-               `((,cmd . ,handler))))
+             (cond ((not (listp cmd))
+                    (list (cons (list cmd) handler)))
+                   ((eq (car cmd) 'batch)
+                    (cdr cmd))
+                   (t
+                    (list (cons cmd handler)))))
       (cl-destructuring-bind (cmd . handler)
           cmd-and-handler
         (let* ((req-id (emms-mpv-ipc-id-get))
@@ -982,13 +984,13 @@ in which case common HANDLER argument is ignored."
 
 (defun emms-mpv-stop ()
   (when (memq this-command emms-mpv-stop-commands)
-    (emms-mpv-cmd `(stop))))
+    (emms-mpv-cmd 'stop)))
 
 (defun emms-mpv-pause ()
-  (emms-mpv-cmd `(set pause yes)))
+  (emms-mpv-cmd '(set pause yes)))
 
 (defun emms-mpv-resume ()
-  (emms-mpv-cmd `(set pause no)))
+  (emms-mpv-cmd '(set pause no)))
 
 (defun emms-mpv-seek (sec)
   (emms-mpv-cmd `(seek ,sec relative)))
