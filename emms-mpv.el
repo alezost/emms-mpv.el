@@ -37,12 +37,17 @@
 ;; EMMS playlist, then mpv player from the lastly visited playlist will
 ;; be controlled.
 ;;
+;; If `emms-playlist-new' is called non-interactively, the new buffer
+;; will not become the current EMMS playlist.  To make it (or any other
+;; playlist) the current one without switching to it, you may use
+;; `emms-mpv-set-current-playlist'.
+
 ;; Also this file handles pause/unpause events i.e., when you pause mpv
 ;; player itself, EMMS get a signal that the player is paused
 ;; ("emms-player-mpv.el" doesn't do it).  So your mode line will be
 ;; updated correctly for (un)pausing (if you use `emms-state-mode' or
 ;; `emms-playing-time-mode'+`emms-mode-line-mode' or something similar).
-;;
+
 ;; Another difference from `emms-player-mpv' is that `emms-mpv' switches
 ;; between video tracks fast and smoothly, without recreating video frame.
 
@@ -55,7 +60,7 @@
 ;;   buffer, and these buffers are "linked" by cross-setting buffer-local
 ;;   `emms-playlist-buffer' and `emms-mpv-ipc-buffer' variables.
 ;;   This is done by advising `emms-playlist-new' with
-;;   `emms-mpv-playlist-new-current' function.
+;;   `emms-mpv-playlist-link' function.
 ;;
 ;; - Each EMMS playlist has the following buffer-local variables:
 ;;   `emms-player-playing-p', `emms-player-stopped-p', and
@@ -902,20 +907,10 @@ with it."
       (setq-local emms-playlist-buffer buffer
                   emms-mpv-ipc-socket
                   (concat (file-name-as-directory emms-directory)
-                          (emms-mpv-ipc-socket-name pl-name))))))
-
-(defun emms-mpv-playlist-new-current (buffer)
-  "Make EMMS playlist BUFFER current.
-This function should be called only with `emms-playlist-new' output to
-make the created playlist current and to attach it to a unique mpv
-process that will be started later."
-  (emms-mpv-playlist-link buffer)
-  (setq-default emms-playlist-buffer buffer)
-  (emms-mpv-update-global-state 'vars)
+                          (emms-mpv-ipc-socket-name pl-name)))))
   buffer)
 
-(advice-add 'emms-playlist-new
-  :filter-return #'emms-mpv-playlist-new-current)
+(advice-add 'emms-playlist-new :filter-return #'emms-mpv-playlist-link)
 
 (defvar emms-mpv-playlist-buffer nil
   "Lastly selected EMMS playlist buffer.
