@@ -672,7 +672,7 @@ instance is the global playlist."
                                (emms-track-get track 'name)
                                "\""
                                (and info (concat ": " info)))))
-         (message err-msg)
+         (message "%s" err-msg)
          (emms-mpv-next-noerror))))))
 
 (defun emms-mpv-handle-event-idle (_json-data)
