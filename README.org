@@ -20,6 +20,12 @@ player itself, EMMS get a signal that the player is paused
 updated correctly for (un)pausing, if you use [[https://github.com/alezost/emms-state.el][emms-state-mode]] or
 =emms-playing-time-mode= + =emms-mode-line-mode= or something similar.
 
+- Another additional feature of =emms-mpv= is saving and restoring track
+progress.  By default, if a media file is not fully played, its progress
+will be saved and restored the next time you will play this file.  If
+you don't need this feature, set =emms-mpv-keep-progress= variable to
+nil.
+
 See also "Commentary" section of [[file:emms-mpv.el]] for more details.
 
 ** Installation

@@ -51,6 +51,11 @@
 ;; Another difference from `emms-player-mpv' is that `emms-mpv' switches
 ;; between video tracks fast and smoothly, without recreating video frame.
 
+;; Finally, `emms-mpv' saves and restores track progress by default: if
+;; a media file is not fully played, its progress will be saved and
+;; restored the next time you will play this file.  If you don't need
+;; this feature, set `emms-mpv-keep-progress' variable to nil.
+
 ;; Technical details:
 ;;
 ;; EMMS itself doesn't actually support using multiple player processes.
@@ -81,6 +86,7 @@
 (require 'json)
 (require 'emms)
 (require 'emms-player-simple)
+(require 'emms-playing-time)
 
 (defgroup emms-mpv nil
   "EMMS player for mpv."
@@ -273,6 +279,13 @@ completely useless because this duration does not show the playback time
 of the current track, it is just the current playing time starting from
 zero.  That's why it is not recommended to keep \"duration\" without
 \"seekable\" in `emms-mpv-property-handlers'.")
+
+(defvar-local emms-mpv-current-track nil
+  "Current EMMS track.
+This variable is needed for saving track progress: when a new track is
+started, EMMS changes track in playlist before sending command to the
+player, so `emms-playlist-selected-track' returns a new track and we
+cannot access the previous track to save its progress.")
 
 
 ;;; General utils
@@ -640,7 +653,9 @@ instance is the global playlist."
   (when emms-mpv-file-loaded-p
     (setq emms-mpv-file-loaded-p nil)
     (with-current-buffer emms-playlist-buffer
-      (run-hooks 'emms-mpv-file-loaded-hook)))
+      (run-hooks 'emms-mpv-file-loaded-hook)
+      (emms-mpv-restore-track-progress-maybe
+       (emms-playlist-selected-track))))
   (when emms-mpv-seek-p
     (setq emms-mpv-seek-p nil)
     (emms-mpv-sync-playing-time-maybe)))
@@ -651,7 +666,9 @@ instance is the global playlist."
 
 (defun emms-mpv-handle-event-file-loaded (_json-data)
   "Handler for \"file-loaded\" event."
-  (setq emms-mpv-file-loaded-p t))
+  (setq emms-mpv-file-loaded-p t)
+  (with-current-buffer emms-playlist-buffer
+    (setq emms-mpv-current-track (emms-playlist-selected-track))))
 
 (defun emms-mpv-handle-event-end-file (json-data)
   "Handler for \"end-file\" event."
@@ -663,6 +680,8 @@ instance is the global playlist."
       ("eof"
        (emms-mpv-next-noerror))
       ("stop"
+       (emms-mpv-save-track-progress-maybe
+        emms-mpv-current-track emms-playing-time)
        (emms-mpv-update-global-state-maybe
         emms-playlist-buffer 'stop))
       ("error"
@@ -673,7 +692,10 @@ instance is the global playlist."
                                "\""
                                (and info (concat ": " info)))))
          (message "%s" err-msg)
-         (emms-mpv-next-noerror))))))
+         (emms-mpv-next-noerror)))
+      (_
+       (emms-mpv-save-track-progress-maybe
+        emms-mpv-current-track emms-playing-time)))))
 
 (defun emms-mpv-handle-event-idle (_json-data)
   "Handler for \"idle\" event."
@@ -950,6 +972,147 @@ This is internal variable for `emms-mpv-update-current-playlist'.")
       emms-mpv-ipc-buffer
     (with-current-buffer emms-playlist-buffer
       emms-mpv-ipc-buffer)))
+
+
+;;; Track progress
+
+(defcustom emms-mpv-keep-progress t
+  "Whether media file progress should be saved/restored or not.
+If t, a file progress is saved and restored when the file is played next time.
+If `save', a file progress is saved but not restored when the file is played.
+If nil, a file progress is not saved."
+  :type '(choice (const :tag "Do not keep progress" nil)
+                 (const :tag "Save progress" save)
+                 (const :tag "Save and restore progress" t))
+  :group 'emms-mpv)
+
+(defvar emms-mpv-progress-data nil
+  ;; XXX Right now, this is alist but maybe hash table could be a better
+  ;; choice since there may be (or not?) MANY files with saved progress.
+  "Saved progresses of media files.
+This variable should not be used directly.  Use `emms-mpv-progress-get'
+and `emms-mpv-progress-set' to access/change it.")
+
+(defvar emms-mpv-progress-file-name
+  (expand-file-name "progress" emms-directory)
+  "File where progress of media files is saved.")
+
+(defvar emms-mpv-progress-filters
+  '(emms-mpv-progress-check-file-type
+    emms-mpv-progress-check-time)
+  "List of functions to check if a track progress should be kept or not.
+
+Each function is evaluated with 2 arguments: EMMS track and progress
+time (in seconds).
+
+If at least one function returns nil, progress of this track is not
+saved.  Otherwise (if all the functions return non-nil), the progress
+can be saved (depending on the value of `emms-mpv-keep-progress').")
+
+(defvar emms-mpv-progress-threshold 60
+  "Number of seconds defining if a track progress should be saved or not.
+
+If track progress is less than this threshold or if less time left till
+the end of the track, then its progress is not saved.
+
+This variable is used only when `emms-mpv-keep-progress' is non-nil and
+`emms-mpv-progress-check-time' is added to `emms-mpv-progress-filters'.")
+
+(defvar emms-mpv-progress-initialized-p nil
+  "Non-nil, if `emms-mpv-progress-data' is already initialized.")
+
+(defun emms-mpv-progress-get (name)
+  "Return NAME value from `emms-mpv-progress-data'.
+Return nil, if there is no NAME key `emms-mpv-progress-data'."
+  (emms-mpv-progress-initialize-maybe)
+  (alist-get name emms-mpv-progress-data nil nil #'string=))
+
+(defun emms-mpv-progress-set (name value)
+  "Set NAME to VALUE in `emms-mpv-progress-data'."
+  (emms-mpv-progress-initialize-maybe)
+  (if-let* ((assoc (assoc name emms-mpv-progress-data #'string=)))
+      (setcdr assoc value)
+    (setq emms-mpv-progress-data
+          (cons (cons name value)
+                emms-mpv-progress-data))))
+
+(defun emms-mpv-progress-check-file-type (track _progress)
+  "Return non-nil if TRACK type is `file'."
+  (eq (emms-track-type track) 'file))
+
+(defun emms-mpv-progress-check-time (track progress)
+  "Return nil if TRACK PROGRESS is too small or too big for saving.
+See `emms-mpv-progress-threshold' for details."
+  (not
+   (or (< progress emms-mpv-progress-threshold)
+       (let* ((total (emms-track-get track 'info-playing-time))
+              (left  (- total progress)))
+         (< left emms-mpv-progress-threshold)))))
+
+(defun emms-mpv-progress-initialize-maybe ()
+  "Initialize `emms-mpv-progress-data' if not yet initialized.
+Initializing is reading the value from `emms-mpv-progress-file-name'."
+  (unless emms-mpv-progress-initialized-p
+    (when (file-exists-p emms-mpv-progress-file-name)
+      (with-temp-buffer
+        (insert-file-contents emms-mpv-progress-file-name)
+        (goto-char (point-min))
+        (setq emms-mpv-progress-data (read (current-buffer)))))
+    (setq emms-mpv-progress-initialized-p t)))
+
+(defun emms-mpv-write-progress-to-file ()
+  "Update the contents of `emms-mpv-progress-file-name'."
+  (with-temp-buffer
+    (pp emms-mpv-progress-data (current-buffer))
+    (let ((backup-inhibited t))
+      (write-file emms-mpv-progress-file-name))))
+
+(defun emms-mpv-save-track-progress-maybe (track progress)
+  "Save TRACK PROGRESS if needed."
+  (when (and track
+             emms-mpv-keep-progress
+             (seq-every-p (lambda (filter)
+                            (funcall filter track progress))
+                          emms-mpv-progress-filters))
+    (emms-mpv-progress-set (emms-track-name track)
+                           progress)))
+
+(defun emms-mpv-save-current-progress-maybe ()
+  "Save track progresses for all playlists."
+  (interactive)
+  (when emms-mpv-keep-progress
+    (dolist (buf (emms-mpv-playlist-buffers))
+      (with-current-buffer buf
+        (unless emms-player-stopped-p
+          ;; Ideally, playing time should be updated but
+          ;; `emms-mpv-sync-playing-time-maybe' is asynchronous,
+          ;; and we need to save progress right now.
+          (emms-mpv-save-track-progress-maybe
+           (emms-playlist-selected-track)
+           emms-playing-time))))
+    (emms-mpv-write-progress-to-file)))
+
+(defun emms-mpv-restore-track-progress (track)
+  "Restore TRACK progress.
+Return nil, if there is no saved progress for TRACK."
+  (when-let* ((progress (emms-mpv-progress-get (emms-track-name track))))
+    (emms-player-seek-to progress)
+    t))
+
+(defun emms-mpv-restore-track-progress-maybe (track)
+  "Restore TRACK progress if needed.
+Return nil, if there is no saved progress for TRACK."
+  (when (eq emms-mpv-keep-progress t)
+    (emms-mpv-restore-track-progress track)))
+
+(defun emms-mpv-restore-progress ()
+  "Restore progress of the current track."
+  (interactive)
+  (let ((track (emms-playlist-current-selected-track)))
+    (or (emms-mpv-restore-track-progress track)
+        (error "No saved progress for \"%s\"" (emms-track-name track)))))
+
+(add-hook 'kill-emacs-hook #'emms-mpv-save-current-progress-maybe)
 
 
 ;;; High-level EMMS interface
