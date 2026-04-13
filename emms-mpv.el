@@ -1057,7 +1057,7 @@ Return nil, if there is no NAME key `emms-mpv-progress-data'."
   (if-let* ((assoc (assoc name emms-mpv-progress-data #'string=)))
       (setcdr assoc value)
     (setq emms-mpv-progress-data
-          (cons (cons name value)
+          (cons (cons (substring-no-properties name) value)
                 emms-mpv-progress-data))))
 
 (defun emms-mpv-progress-remove (name)
