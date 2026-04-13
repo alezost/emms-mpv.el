@@ -682,14 +682,18 @@ instance is the global playlist."
   (with-current-buffer emms-playlist-buffer
     (emms-mpv-stopped)
     (pcase (alist-get 'reason json-data)
-      ("eof"
-       (emms-mpv-next-noerror))
       ("stop"
        (emms-mpv-save-track-progress-maybe
         emms-mpv-current-track
         emms-mpv-playing-time)
        (emms-mpv-update-global-state-maybe
         emms-playlist-buffer 'stop))
+      ("eof"
+      ;; Actually, this case does not occur: mpv never returns "eof"
+      ;; reason for "end-file" event.  Instead, "eof-reached" property
+      ;; is changed so we use `emms-mpv-handle-property-eof-reached'.
+       (emms-mpv-progress-remove-finished-maybe)
+       (emms-mpv-next-noerror))
       ("error"
        (let* ((track (emms-playlist-selected-track))
               (info (alist-get 'file_error json-data))
@@ -746,6 +750,7 @@ instance is the global playlist."
   ;; Probably, mpv bug.
   (when-let* ((eof (eq t (alist-get 'data json-data))))
     (with-current-buffer emms-playlist-buffer
+      (emms-mpv-progress-remove-finished-maybe)
       (emms-mpv-stopped)
       (emms-mpv-next-noerror))))
 
@@ -1005,12 +1010,16 @@ track before stopping it or switching to another track."
   ;; XXX Right now, this is alist but maybe hash table could be a better
   ;; choice since there may be (or not?) MANY files with saved progress.
   "Saved progresses of media files.
-This variable should not be used directly.  Use `emms-mpv-progress-get'
-and `emms-mpv-progress-set' to access/change it.")
+This variable should not be used directly.  Use `emms-mpv-progress-get',
+`emms-mpv-progress-set', and `emms-mpv-progress-remove' to access/change
+it.")
 
 (defvar emms-mpv-progress-file-name
   (expand-file-name "progress" emms-directory)
   "File where progress of media files is saved.")
+
+(defvar emms-mpv-progress-remove-finished t
+  "If non-nil, remove the old progress of a file after watching it.")
 
 (defvar emms-mpv-progress-filters
   '(emms-mpv-progress-check-file-type
@@ -1050,6 +1059,18 @@ Return nil, if there is no NAME key `emms-mpv-progress-data'."
     (setq emms-mpv-progress-data
           (cons (cons name value)
                 emms-mpv-progress-data))))
+
+(defun emms-mpv-progress-remove (name)
+  "Remove NAME from `emms-mpv-progress-data'."
+  (emms-mpv-progress-initialize-maybe)
+  (setq emms-mpv-progress-data
+        (assoc-delete-all name emms-mpv-progress-data #'string=)))
+
+(defun emms-mpv-progress-remove-finished-maybe ()
+  "Remove saved progress of the current track if needed."
+  (when emms-mpv-progress-remove-finished
+    (emms-mpv-progress-remove
+     (emms-track-name (emms-playlist-selected-track)))))
 
 (defun emms-mpv-progress-check-file-type (track _progress)
   "Return non-nil if TRACK type is `file'."
