@@ -995,6 +995,9 @@ If t, a file progress is saved and restored when the file is played next time.
 If `save', a file progress is saved but not restored when the file is played.
 If nil, a file progress is not saved.
 
+You may use `emms-mpv-progress-cleanup' to remove saved progresses for
+files that do not exist anymore.
+
 IMPORTANT NOTE: Actually, the current progress is not saved if this
 variable is non-nil, the last synchronized progress is saved instead.
 We do not know the current track progress until we request this info
@@ -1071,6 +1074,19 @@ Return nil, if there is no NAME key `emms-mpv-progress-data'."
   (when emms-mpv-progress-remove-finished
     (emms-mpv-progress-remove
      (emms-track-name (emms-playlist-selected-track)))))
+
+(defun emms-mpv-progress-cleanup ()
+  "Remove saved progresses of non-existent files."
+  (interactive)
+  (let ((count-before (length emms-mpv-progress-data)))
+    (setq emms-mpv-progress-data
+          (seq-keep (lambda (assoc)
+                      (and (file-exists-p (car assoc))
+                           assoc))
+                    emms-mpv-progress-data))
+    (let ((count-after (length emms-mpv-progress-data)))
+      (message "Old progresses for %d non-existent files removed."
+               (- count-before count-after)))))
 
 (defun emms-mpv-progress-check-file-type (track _progress)
   "Return non-nil if TRACK type is `file'."
