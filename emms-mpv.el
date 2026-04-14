@@ -1097,9 +1097,13 @@ Return nil, if there is no NAME key `emms-mpv-progress-data'."
 See `emms-mpv-progress-threshold' for details."
   (not
    (or (< progress emms-mpv-progress-threshold)
-       (let* ((total (emms-track-get track 'info-playing-time))
-              (left  (- total progress)))
-         (< left emms-mpv-progress-threshold)))))
+       (when-let* ((total (emms-track-get track 'info-playing-time)))
+         (let* ((left  (- total progress))
+                (savep (< left emms-mpv-progress-threshold)))
+           (and emms-mpv-progress-remove-finished
+                (not savep)
+                (emms-mpv-progress-remove (emms-track-name track)))
+           savep)))))
 
 (defun emms-mpv-progress-initialize-maybe ()
   "Initialize `emms-mpv-progress-data' if not yet initialized.
