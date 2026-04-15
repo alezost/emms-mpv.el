@@ -1027,7 +1027,7 @@ it.")
 (defvar emms-mpv-progress-filters
   '(emms-mpv-progress-check-file-type
     emms-mpv-progress-check-small-track
-    emms-mpv-progress-check-time)
+    emms-mpv-progress-check-time-threshold)
   "List of functions to check if a track progress should be kept or not.
 
 Each function is evaluated with 2 arguments: EMMS track and progress
@@ -1044,7 +1044,8 @@ If track progress is less than this threshold or if less time left till
 the end of the track, then its progress is not saved.
 
 This variable is used only when `emms-mpv-keep-progress' is non-nil and
-`emms-mpv-progress-check-time' is added to `emms-mpv-progress-filters'.")
+`emms-mpv-progress-check-time-threshold' is added to
+`emms-mpv-progress-filters'.")
 
 (defvar emms-mpv-progress-track-time 600
   "Track length defining if a progress should be saved or not.
@@ -1103,7 +1104,7 @@ Return nil, if there is no NAME key `emms-mpv-progress-data'."
   "Return non-nil if TRACK type is `file'."
   (eq (emms-track-type track) 'file))
 
-(defun emms-mpv-progress-check-time (track progress)
+(defun emms-mpv-progress-check-time-threshold (track progress)
   "Return nil if TRACK PROGRESS is too small or too big for saving.
 See `emms-mpv-progress-threshold' for details."
   (not
