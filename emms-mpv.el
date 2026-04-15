@@ -1137,10 +1137,11 @@ Initializing is reading the value from `emms-mpv-progress-file-name'."
 
 (defun emms-mpv-write-progress-to-file ()
   "Update the contents of `emms-mpv-progress-file-name'."
-  (with-temp-buffer
-    (pp emms-mpv-progress-data (current-buffer))
-    (let ((backup-inhibited t))
-      (write-file emms-mpv-progress-file-name))))
+  (when emms-mpv-progress-data
+    (with-temp-buffer
+      (pp emms-mpv-progress-data (current-buffer))
+      (let ((backup-inhibited t))
+        (write-file emms-mpv-progress-file-name)))))
 
 (defun emms-mpv-save-track-progress-maybe (track progress)
   "Save TRACK PROGRESS if needed."
