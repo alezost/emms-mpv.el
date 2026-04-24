@@ -683,15 +683,13 @@ instance is the global playlist."
     (emms-mpv-stopped)
     (pcase (alist-get 'reason json-data)
       ("stop"
-       (emms-mpv-save-track-progress-maybe
-        emms-mpv-current-track
-        emms-mpv-playing-time)
+       (emms-mpv-save-track-progress-maybe)
        (emms-mpv-update-global-state-maybe
         emms-playlist-buffer 'stop))
       ("eof"
-      ;; Actually, this case does not occur: mpv never returns "eof"
-      ;; reason for "end-file" event.  Instead, "eof-reached" property
-      ;; is changed so we use `emms-mpv-handle-property-eof-reached'.
+       ;; Actually, this case does not occur: mpv never returns "eof"
+       ;; reason for "end-file" event.  Instead, "eof-reached" property
+       ;; is changed so we use `emms-mpv-handle-property-eof-reached'.
        (emms-mpv-progress-remove-finished-maybe)
        (emms-mpv-next-noerror))
       ("error"
@@ -704,9 +702,7 @@ instance is the global playlist."
          (message "%s" err-msg)
          (emms-mpv-next-noerror)))
       (_
-       (emms-mpv-save-track-progress-maybe
-        emms-mpv-current-track
-        emms-mpv-playing-time)))))
+       (emms-mpv-save-track-progress-maybe)))))
 
 (defun emms-mpv-handle-event-idle (_json-data)
   "Handler for \"idle\" event."
@@ -1144,15 +1140,17 @@ Initializing is reading the value from `emms-mpv-progress-file-name'."
       (let ((backup-inhibited t))
         (write-file emms-mpv-progress-file-name)))))
 
-(defun emms-mpv-save-track-progress-maybe (track progress)
-  "Save TRACK PROGRESS if needed."
-  (when (and track
-             emms-mpv-keep-progress
+(defun emms-mpv-save-track-progress-maybe ()
+  "Save the current track progress if needed."
+  (when (and emms-mpv-keep-progress
+             emms-mpv-current-track
              (seq-every-p (lambda (filter)
-                            (funcall filter track progress))
+                            (funcall filter
+                                     emms-mpv-current-track
+                                     emms-mpv-playing-time))
                           emms-mpv-progress-filters))
-    (emms-mpv-progress-set (emms-track-name track)
-                           progress)))
+    (emms-mpv-progress-set (emms-track-name emms-mpv-current-track)
+                           emms-mpv-playing-time)))
 
 (defun emms-mpv-save-current-progress-maybe ()
   "Save track progresses for all playlists."
@@ -1164,9 +1162,7 @@ Initializing is reading the value from `emms-mpv-progress-file-name'."
           ;; Ideally, playing time should be updated but
           ;; `emms-mpv-sync-playing-time-maybe' is asynchronous,
           ;; and we need to save progress right now.
-          (emms-mpv-save-track-progress-maybe
-           (emms-playlist-selected-track)
-           emms-mpv-playing-time))))
+          (emms-mpv-save-track-progress-maybe))))
     (emms-mpv-write-progress-to-file)))
 
 (defun emms-mpv-restore-track-progress (track)
