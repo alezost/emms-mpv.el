@@ -1083,9 +1083,10 @@ Return nil, if there is no NAME key `emms-mpv-progress-data'."
 
 (defun emms-mpv-progress-remove-finished-maybe ()
   "Remove saved progress of the current track if needed."
-  (when emms-mpv-progress-remove-finished
+  (when (and emms-mpv-progress-remove-finished
+             emms-mpv-current-track)
     (emms-mpv-progress-remove
-     (emms-track-name (emms-playlist-selected-track)))))
+     (emms-track-name emms-mpv-current-track))))
 
 (defun emms-mpv-progress-cleanup ()
   "Remove saved progresses of non-existent files."
