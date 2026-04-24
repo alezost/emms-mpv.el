@@ -286,7 +286,7 @@ started, EMMS changes track in playlist before sending command to the
 player, so `emms-playlist-selected-track' returns a new track and we
 cannot access the previous track to save its progress.")
 
-(defvar-local emms-mpv-playing-time 0
+(defvar-local emms-mpv-playing-time nil
   "Playing time progress of the current track.")
 
 
@@ -1143,6 +1143,7 @@ Initializing is reading the value from `emms-mpv-progress-file-name'."
 (defun emms-mpv-save-track-progress-maybe ()
   "Save the current track progress if needed."
   (when (and emms-mpv-keep-progress
+             emms-mpv-playing-time
              emms-mpv-current-track
              (seq-every-p (lambda (filter)
                             (funcall filter
@@ -1150,7 +1151,8 @@ Initializing is reading the value from `emms-mpv-progress-file-name'."
                                      emms-mpv-playing-time))
                           emms-mpv-progress-filters))
     (emms-mpv-progress-set (emms-track-name emms-mpv-current-track)
-                           emms-mpv-playing-time)))
+                           emms-mpv-playing-time)
+    (setq emms-mpv-playing-time nil)))
 
 (defun emms-mpv-save-current-progress-maybe ()
   "Save track progresses for all playlists."
