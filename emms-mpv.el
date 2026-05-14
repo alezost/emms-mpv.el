@@ -1128,11 +1128,11 @@ See `emms-mpv-progress-threshold' for details."
    (or (< progress emms-mpv-progress-threshold)
        (when-let* ((total (emms-track-get track 'info-playing-time)))
          (let* ((left  (- total progress))
-                (savep (< left emms-mpv-progress-threshold)))
+                (skipp (< left emms-mpv-progress-threshold)))
            (and emms-mpv-progress-remove-finished
-                (not savep)
+                skipp
                 (emms-mpv-progress-remove (emms-track-name track)))
-           savep)))))
+           skipp)))))
 
 (defun emms-mpv-progress-check-small-track (track _progress)
   "Return nil if TRACK is too small for saving.
