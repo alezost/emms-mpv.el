@@ -673,7 +673,8 @@ instance is the global playlist."
   "Handler for \"file-loaded\" event."
   (setq emms-mpv-file-loaded-p t)
   (with-current-buffer emms-playlist-buffer
-    (setq emms-mpv-current-track (emms-playlist-selected-track))))
+    (setq emms-mpv-playing-time nil
+          emms-mpv-current-track (emms-playlist-selected-track))))
 
 (defun emms-mpv-handle-event-end-file (json-data)
   "Handler for \"end-file\" event."
