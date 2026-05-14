@@ -314,6 +314,11 @@ for new buffers."
   (setq emms-playlist-buffers
         (seq-filter #'buffer-live-p emms-playlist-buffers)))
 
+(defun emms-mpv-url-p (string)
+  "Return t if STRING is an URL.
+Return nil otherwise."
+  (string-match-p "https?://" string))
+
 
 ;;; Debug messages
 
@@ -1018,6 +1023,15 @@ it.")
   (expand-file-name "progress" emms-directory)
   "File where progress of media files is saved.")
 
+(defvar emms-mpv-progress-keep-url t
+  "If non-nil, `emms-mpv-progress-cleanup' does not remove URLs.
+
+If nil, `emms-mpv-progress-cleanup' removes all URLs from the saved
+progresses.
+
+Note that URL progresses are not saved at all by default because
+`emms-mpv-progress-filters' contains `emms-mpv-progress-check-file-type'.")
+
 (defvar emms-mpv-progress-remove-finished t
   "If non-nil, remove the old progress of a file after watching it.")
 
@@ -1086,13 +1100,18 @@ Return nil, if there is no NAME key `emms-mpv-progress-data'."
      (emms-track-name emms-mpv-current-track))))
 
 (defun emms-mpv-progress-cleanup ()
-  "Remove saved progresses of non-existent files."
+  "Remove saved progresses of non-existent files.
+See `emms-mpv-progress-keep-url' to control how saved URLs are handled."
   (interactive)
   (let ((count-before (length emms-mpv-progress-data)))
     (setq emms-mpv-progress-data
           (seq-keep (lambda (assoc)
-                      (and (file-exists-p (car assoc))
-                           assoc))
+                      (let ((name (car assoc)))
+                        (if (emms-mpv-url-p name)
+                            (and emms-mpv-progress-keep-url
+                                 assoc)
+                          (and (file-exists-p name)
+                               assoc))))
                     emms-mpv-progress-data))
     (let ((count-after (length emms-mpv-progress-data)))
       (message "Old progresses for %d non-existent files removed."
