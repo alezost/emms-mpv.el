@@ -349,6 +349,18 @@ See `message' for the meaning of FORMAT-STRING and ARGS."
 
 ;;; Buffer and file names
 
+(defvar emms-mpv-hidden-buffer-names t
+  "If non-nil, prepend space to mpv and mpv-ipc buffer names.
+If nil, these buffer names do not start with a space, so they will be
+visible in various buffer lists.")
+
+(defun emms-mpv-hide-buffer-name-maybe (name)
+  "Prepend space to NAME if needed.
+This depends on `emms-mpv-hidden-buffer-names' value."
+  (if emms-mpv-hidden-buffer-names
+      (concat " " name)
+    name))
+
 (defun emms-mpv-base-name (playlist-name)
   "Return PLAYLIST-NAME prepared for mpv process and buffer names."
   (let ((re "[ *]+"))
@@ -362,7 +374,8 @@ See `message' for the meaning of FORMAT-STRING and ARGS."
 
 (defun emms-mpv-buffer-name (playlist-name)
   "Return mpv buffer name for EMMS PLAYLIST-NAME."
-  (concat " *" (emms-mpv-process-name playlist-name) "*"))
+  (emms-mpv-hide-buffer-name-maybe
+   (concat "*" (emms-mpv-process-name playlist-name) "*")))
 
 (defun emms-mpv-ipc-process-name (playlist-name)
   "Return mpv IPC process name for EMMS PLAYLIST-NAME."
@@ -370,7 +383,8 @@ See `message' for the meaning of FORMAT-STRING and ARGS."
 
 (defun emms-mpv-ipc-buffer-name (playlist-name)
   "Return mpv IPC buffer name for EMMS PLAYLIST-NAME."
-  (concat " *" (emms-mpv-ipc-process-name playlist-name) "*"))
+  (emms-mpv-hide-buffer-name-maybe
+   (concat "*" (emms-mpv-ipc-process-name playlist-name) "*")))
 
 (defun emms-mpv-ipc-socket-name (playlist-name)
   "Return mpv IPC socket file name for EMMS PLAYLIST-NAME."
