@@ -5,8 +5,8 @@
 
 ;; Authors: Mike Kazantsev <mk.fraggod@gmail.com>
 ;;          Alex Kost <alezost@gmail.com>
-;; Version: 0.2.1
-;; Package-Requires: ((cl-lib "0.5") (seq "2.24"))
+;; Version: 0.3
+;; Package-Requires: ((emacs "29.1"))
 ;; URL: https://github.com/alezost/emms-mpv.el
 ;; Keywords: emms
 
