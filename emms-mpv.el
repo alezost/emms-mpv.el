@@ -101,9 +101,22 @@
   :type '(cons symbol alist)
   :group 'emms-mpv)
 
-(defcustom emms-mpv-command-name "mpv"
-  "mpv binary to use. Can be absolute path or just binary name."
-  :type 'file
+(define-obsolete-variable-alias 'emms-mpv-command-name
+  'emms-mpv-command "0.3")
+
+(defcustom emms-mpv-command "mpv"
+  "Command to start mpv process.
+Can be either:
+
+  a string with mpv executable or
+
+  (NAME ARGS ...) list, where NAME is the name of mpv executable and
+                              ARGS are mpv arguments.
+
+In the latter case, `emms-mpv-arguments' is ignored."
+  :type '(choice string
+                 file
+                 (repeat :tag "mpv command with its arguments" string))
   :group 'emms-mpv)
 
 (defcustom emms-mpv-arguments
@@ -116,8 +129,7 @@
 Either a list of strings or function returning such list.
 Extra arguments --idle and --input-ipc-server are added automatically.
 Note that unless --no-config option is specified here,
-mpv will also use options from its configuration files.
-For mpv binary path, see `emms-mpv-command-name'."
+mpv will also use options from its configuration files."
   :type '(choice (repeat :tag "List of mpv arguments" string)
                  function)
   :group 'emms-mpv)
@@ -431,13 +443,16 @@ started process."
     (emms-mpv-process-stop emms-mpv-process)
     (unless (file-directory-p (file-name-directory emms-mpv-ipc-socket))
       (make-directory (file-name-directory emms-mpv-ipc-socket)))
-    (let* ((args (append
-                  (list emms-mpv-command-name)
-                  (if (functionp emms-mpv-arguments)
-                      (funcall emms-mpv-arguments)
-                    emms-mpv-arguments)
-                  (list (format "--input-ipc-server=%s" emms-mpv-ipc-socket)
-                        "--idle")))
+    (let* ((args (if (listp emms-mpv-command)
+                     emms-mpv-command
+                   (cons emms-mpv-command
+                         (if (functionp emms-mpv-arguments)
+                             (funcall emms-mpv-arguments)
+                           emms-mpv-arguments))))
+           (args (append args
+                         (list (concat "--input-ipc-server="
+                                       emms-mpv-ipc-socket)
+                               "--idle")))
            (process-environment (if (memq nil emms-mpv-environment)
                                     (delq nil emms-mpv-environment)
                                   (append emms-mpv-environment
