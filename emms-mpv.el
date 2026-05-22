@@ -193,13 +193,18 @@ buffer so all variables for the current mpv process are available.")
     ;; See `emms-mpv-seekable-p' for details.
     ("seekable"         . emms-mpv-handle-property-seekable)
     ("duration"         . emms-mpv-handle-property-duration)
+    ("media-title"      . emms-mpv-handle-property-media-title)
     ("metadata"         . emms-mpv-handle-property-metadata))
   "Alist of mpv properties and their handlers.
 See `emms-mpv-handle-event-handlers' for details.")
 
+(defvar emms-mpv-media-title-track-types
+  '(url streamlist)
+  "List of track types where \"media-title\" property should be handled.")
+
 (defvar emms-mpv-metadata-track-types
   '(url streamlist)
-  "List of track types where metadata update should be handled.")
+  "List of track types where \"metadata\" update should be handled.")
 
 (defvar emms-mpv-metadata-alist
   '((info-title       icy-title icy-name title)
@@ -787,6 +792,19 @@ instance is the global playlist."
           (setq duration (round duration))
           (emms-track-set track 'info-playing-time duration)
           (emms-mpv-update-current-track))))))
+
+(defun emms-mpv-handle-property-media-title (json-data)
+  "Handler for \"media-title\" property change.
+Change track title if current track is of
+`emms-mpv-media-title-track-types' type."
+  (when-let* ((title (alist-get 'data json-data)))
+    (with-current-buffer emms-playlist-buffer
+      (let* ((track (emms-playlist-selected-track))
+             (type  (emms-track-type track)))
+        (when (memq type emms-mpv-media-title-track-types)
+          (emms-mpv-debug-msg "updating media title for track: %s"
+                              (emms-track-name track))
+          (emms-track-set track 'info-title title))))))
 
 (defun emms-mpv-handle-property-metadata (json-data)
   "Handler for \"metadata\" property change."
