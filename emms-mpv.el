@@ -1038,14 +1038,11 @@ This is internal variable for `emms-mpv-update-current-playlist'.")
 ;;; Track progress
 
 (defcustom emms-mpv-keep-progress t
-  "Whether media file progress should be saved/restored or not.
+  "Whether track progress should be saved/restored or not.
 
-If t, a file progress is saved and restored when the file is played next time.
-If `save', a file progress is saved but not restored when the file is played.
-If nil, a file progress is not saved.
-
-You may use `emms-mpv-progress-cleanup' to remove saved progresses for
-files that do not exist anymore.
+If t, track progress is saved and restored when the track is played next time.
+If `save', track progress is saved but not restored when the track is played.
+If nil, track progress is not saved.
 
 IMPORTANT NOTE: Actually, the current progress is not saved if this
 variable is non-nil, the last synchronized progress is saved instead.
@@ -1057,27 +1054,6 @@ track before stopping it or switching to another track."
                  (const :tag "Save progress" save)
                  (const :tag "Save and restore progress" t))
   :group 'emms-mpv)
-
-(defvar emms-mpv-progress-data nil
-  ;; XXX Right now, this is alist but maybe hash table could be a better
-  ;; choice since there may be (or not?) MANY files with saved progress.
-  "Saved progresses of media files.
-This variable should not be used directly.  Use `emms-mpv-progress-get',
-`emms-mpv-progress-set', and `emms-mpv-progress-remove' to access/change
-it.")
-
-(defvar emms-mpv-progress-file-name
-  (expand-file-name "progress" emms-directory)
-  "File where progress of media files is saved.")
-
-(defvar emms-mpv-progress-keep-url t
-  "If non-nil, `emms-mpv-progress-cleanup' does not remove URLs.
-
-If nil, `emms-mpv-progress-cleanup' removes all URLs from the saved
-progresses.
-
-Note that URL progresses are not saved at all by default because
-`emms-mpv-progress-filters' contains `emms-mpv-progress-check-file-type'.")
 
 (defvar emms-mpv-progress-remove-finished t
   "If non-nil, remove the old progress of a file after watching it.")
@@ -1115,54 +1091,23 @@ This variable is used only when `emms-mpv-keep-progress' is non-nil and
 `emms-mpv-progress-check-small-track' is added to
 `emms-mpv-progress-filters'.")
 
-(defvar emms-mpv-progress-initialized-p nil
-  "Non-nil, if `emms-mpv-progress-data' is already initialized.")
+(defun emms-mpv-progress-get (track)
+  "Return TRACK progress."
+  (emms-track-get track 'progress))
 
-(defun emms-mpv-progress-get (name)
-  "Return NAME value from `emms-mpv-progress-data'.
-Return nil, if there is no NAME key `emms-mpv-progress-data'."
-  (emms-mpv-progress-initialize-maybe)
-  (alist-get name emms-mpv-progress-data nil nil #'string=))
+(defun emms-mpv-progress-set (track value)
+  "Set TRACK progress to VALUE."
+  (emms-track-set track 'progress value))
 
-(defun emms-mpv-progress-set (name value)
-  "Set NAME to VALUE in `emms-mpv-progress-data'."
-  (emms-mpv-progress-initialize-maybe)
-  (if-let* ((assoc (assoc name emms-mpv-progress-data #'string=)))
-      (setcdr assoc value)
-    (setq emms-mpv-progress-data
-          (cons (cons (substring-no-properties name) value)
-                emms-mpv-progress-data))))
-
-(defun emms-mpv-progress-remove (name)
-  "Remove NAME from `emms-mpv-progress-data'."
-  (emms-mpv-progress-initialize-maybe)
-  (setq emms-mpv-progress-data
-        (assoc-delete-all name emms-mpv-progress-data #'string=)))
+(defun emms-mpv-progress-remove (track)
+  "Remove existing TRACK progress."
+  (emms-mpv-progress-set track nil))
 
 (defun emms-mpv-progress-remove-finished-maybe ()
   "Remove saved progress of the current track if needed."
   (when (and emms-mpv-progress-remove-finished
              emms-mpv-current-track)
-    (emms-mpv-progress-remove
-     (emms-track-name emms-mpv-current-track))))
-
-(defun emms-mpv-progress-cleanup ()
-  "Remove saved progresses of non-existent files.
-See `emms-mpv-progress-keep-url' to control how saved URLs are handled."
-  (interactive)
-  (let ((count-before (length emms-mpv-progress-data)))
-    (setq emms-mpv-progress-data
-          (seq-keep (lambda (assoc)
-                      (let ((name (car assoc)))
-                        (if (emms-mpv-url-p name)
-                            (and emms-mpv-progress-keep-url
-                                 assoc)
-                          (and (file-exists-p name)
-                               assoc))))
-                    emms-mpv-progress-data))
-    (let ((count-after (length emms-mpv-progress-data)))
-      (message "Old progresses for %d non-existent files removed."
-               (- count-before count-after)))))
+    (emms-mpv-progress-remove emms-mpv-current-track)))
 
 (defun emms-mpv-progress-check-file-type (track _progress)
   "Return non-nil if TRACK type is `file'."
@@ -1188,25 +1133,6 @@ See `emms-mpv-progress-track-time' for details."
    (when-let* ((total (emms-track-get track 'info-playing-time)))
      (< total emms-mpv-progress-track-time))))
 
-(defun emms-mpv-progress-initialize-maybe ()
-  "Initialize `emms-mpv-progress-data' if not yet initialized.
-Initializing is reading the value from `emms-mpv-progress-file-name'."
-  (unless emms-mpv-progress-initialized-p
-    (when (file-exists-p emms-mpv-progress-file-name)
-      (with-temp-buffer
-        (insert-file-contents emms-mpv-progress-file-name)
-        (goto-char (point-min))
-        (setq emms-mpv-progress-data (read (current-buffer)))))
-    (setq emms-mpv-progress-initialized-p t)))
-
-(defun emms-mpv-write-progress-to-file ()
-  "Update the contents of `emms-mpv-progress-file-name'."
-  (when emms-mpv-progress-data
-    (with-temp-buffer
-      (pp emms-mpv-progress-data (current-buffer))
-      (let ((backup-inhibited t))
-        (write-file emms-mpv-progress-file-name)))))
-
 (defun emms-mpv-save-track-progress-maybe ()
   "Save the current track progress if needed."
   (when (and emms-mpv-keep-progress
@@ -1217,7 +1143,7 @@ Initializing is reading the value from `emms-mpv-progress-file-name'."
                                      emms-mpv-current-track
                                      emms-mpv-playing-time))
                           emms-mpv-progress-filters))
-    (emms-mpv-progress-set (emms-track-name emms-mpv-current-track)
+    (emms-mpv-progress-set emms-mpv-current-track
                            emms-mpv-playing-time)
     (setq emms-mpv-playing-time nil)))
 
@@ -1231,13 +1157,12 @@ Initializing is reading the value from `emms-mpv-progress-file-name'."
           ;; Ideally, playing time should be updated but
           ;; `emms-mpv-sync-playing-time-maybe' is asynchronous,
           ;; and we need to save progress right now.
-          (emms-mpv-save-track-progress-maybe))))
-    (emms-mpv-write-progress-to-file)))
+          (emms-mpv-save-track-progress-maybe))))))
 
 (defun emms-mpv-restore-track-progress (track)
   "Restore TRACK progress.
 Return nil, if there is no saved progress for TRACK."
-  (when-let* ((progress (emms-mpv-progress-get (emms-track-name track))))
+  (when-let* ((progress (emms-mpv-progress-get track)))
     (emms-player-seek-to progress)
     t))
 
@@ -1253,8 +1178,6 @@ Return nil, if there is no saved progress for TRACK."
   (let ((track (emms-playlist-current-selected-track)))
     (or (emms-mpv-restore-track-progress track)
         (error "No saved progress for \"%s\"" (emms-track-name track)))))
-
-(add-hook 'kill-emacs-hook #'emms-mpv-save-current-progress-maybe)
 
 
 ;;; High-level EMMS interface
