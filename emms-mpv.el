@@ -158,6 +158,15 @@ directly from these commands called by user."
   "Delay until SIGKILL gets sent to `emms-mpv-process',
 if it refuses to exit cleanly on `emms-mpv-process-stop'.")
 
+(defvar emms-mpv-before-process-hook nil
+  "Hook run before starting mpv process.
+
+When this hook is executed, mpv IPC buffer is the current buffer.
+
+You may use this hook to set buffer-local value of `emms-mpv-command'
+variable if you wish to start a particular mpv instance with special
+arguments.")
+
 (defvar emms-mpv-ipc-connect-delays
   '(0.1 0.1 0.1 0.1 0.1 0.1 0.2 0.2 0.3 0.3 0.5 1 1)
   "List of delays before initiating socket connection for new mpv process.")
@@ -443,6 +452,7 @@ started process."
     (emms-mpv-process-stop emms-mpv-process)
     (unless (file-directory-p (file-name-directory emms-mpv-ipc-socket))
       (make-directory (file-name-directory emms-mpv-ipc-socket)))
+    (run-hooks 'emms-mpv-before-process-hook)
     (let* ((args (if (listp emms-mpv-command)
                      emms-mpv-command
                    (cons emms-mpv-command
