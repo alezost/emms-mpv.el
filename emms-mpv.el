@@ -419,6 +419,30 @@ This depends on `emms-mpv-hidden-buffer-names' value."
 
 ;;; mpv process
 
+(defun emms-mpv-command (&optional buffer)
+  "Return list of mpv command line arguments.
+
+Use `emms-mpv-command' and `emms-mpv-arguments' to define the command
+line arguments.
+
+If BUFFER is specified, use buffer-local values of the above variables.
+Return nil if there are no suitable local values."
+  (when (or (null buffer)
+            (local-variable-p 'emms-mpv-command buffer)
+            (local-variable-p 'emms-mpv-arguments buffer))
+    (let ((cmd (if buffer
+                   (buffer-local-value 'emms-mpv-command buffer)
+                 emms-mpv-command)))
+      (if (listp cmd)
+          cmd
+        (let ((args (if buffer
+                        (buffer-local-value 'emms-mpv-arguments buffer)
+                      emms-mpv-arguments)))
+          (cons cmd
+                (if (functionp args)
+                    (funcall args)
+                  args)))))))
+
 (defun emms-mpv-process-property-id (process property)
   "Get unique id for PROPERTY or nil if it was already requested."
   (let ((sym-id (intern (concat "mpv-sym-" property))))
@@ -453,12 +477,9 @@ started process."
     (unless (file-directory-p (file-name-directory emms-mpv-ipc-socket))
       (make-directory (file-name-directory emms-mpv-ipc-socket)))
     (run-hooks 'emms-mpv-before-process-hook)
-    (let* ((args (if (listp emms-mpv-command)
-                     emms-mpv-command
-                   (cons emms-mpv-command
-                         (if (functionp emms-mpv-arguments)
-                             (funcall emms-mpv-arguments)
-                           emms-mpv-arguments))))
+    (let* ((args (or (emms-mpv-command ipc-buffer)
+                     (emms-mpv-command emms-playlist-buffer)
+                     (emms-mpv-command)))
            (args (append args
                          (list (concat "--input-ipc-server="
                                        emms-mpv-ipc-socket)
